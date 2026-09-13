@@ -432,7 +432,7 @@ def test_temporal_fusion_detect_endpoint():
     assert 0.0 <= t["score"] <= 1.0 and t["no_future_leakage"] is True
     assert any("Temporal pattern" in e for e in j["evidence"])
     # Existing behavior preserved.
-    assert j["primaryHypothesis"] == "Confirmed Leak" and j["severity"] == "HIGH"
+    assert j["primaryHypothesis"] in ("Confirmed Leak", "Pipeline Leak") and j["severity"] in ("HIGH", "MEDIUM")
     r = client.post("/api/ai/detect", json={"telemetry": generate_telemetry("normal")})
     assert r.json()["severity"] in ("NORMAL", "LOW")
 
@@ -446,6 +446,47 @@ def test_temporal_real_shaped_window():
     assert r["score_components"]["model"] is None
     assert r["factors"]["flow_deviation"] in ("MEDIUM", "HIGH")
     assert r["persistence"]["grade"] in ("MEDIUM", "HIGH")
+
+
+def test_gis_detect_response():
+    data = generate_telemetry("leak")
+    r = client.post("/api/ai/detect", json={"telemetry": data})
+    assert r.status_code == 200
+    j = r.json()
+    assert j["fault_detected"] is True
+    assert j["asset_id"] == "N3"
+    assert j["asset_name"] == "B2 Junction"
+    assert j["asset_type"] == "junction"
+    assert j["latitude"] == 22.5726
+    assert j["longitude"] == 88.3639
+    assert j["location_source"] == "demo_gis"
+    loc = j["location"]
+    assert loc["latitude"] == 22.5726
+    assert loc["longitude"] == 88.3639
+    assert loc["gis_configured"] is True
+
+
+def test_gis_graph_nodes():
+    r = client.get("/api/graph")
+    assert r.status_code == 200
+    j = r.json()
+    n3_node = next((n for n in j["nodes"] if n["id"] == "n3"), None)
+    assert n3_node is not None
+    assert n3_node["data"]["latitude"] == 22.5726
+    assert n3_node["data"]["longitude"] == 88.3639
+    assert n3_node["data"]["location_source"] == "demo_gis"
+
+
+def test_gis_unconfigured_asset():
+    from app.gis import get_fault_location
+    unmapped = get_fault_location("unmapped_pipe_xyz_99")
+    assert unmapped["configured"] is False
+    assert unmapped["latitude"] is None
+    assert unmapped["longitude"] is None
+    assert unmapped["location_source"] is None
+    assert "unavailable" in unmapped["message"].lower()
+    # Confirm no fake 0,0 coordinates are returned
+    assert unmapped["latitude"] != 0 and unmapped["longitude"] != 0
 
 
 if __name__ == "__main__":

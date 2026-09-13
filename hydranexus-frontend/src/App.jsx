@@ -8,6 +8,9 @@ import RealTelemetryCharts from './components/RealTelemetryCharts'
 import AmbientNetwork from './components/visual/AmbientNetwork'
 import PageTransition from './components/visual/PageTransition'
 import LandingExperience from './components/landing/LandingExperience'
+import FaultLocationCard from './components/FaultLocationCard'
+import FaultMapModal from './components/FaultMapModal'
+import { getFaultLocation, getAssetGIS } from './gis'
 import { Button } from './components/ui/button'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from './components/ui/card'
 import { Badge } from './components/ui/badge'
@@ -124,7 +127,7 @@ function Toast({ toast, onClose }) {
 
 /* ------------------------------- Overview ------------------------------- */
 
-function Overview({ active, data, scenario = 'leak', setPage, trigger, onExport, onOpenRealData }) {
+function Overview({ active, data, scenario = 'leak', setPage, trigger, onExport, onOpenRealData, onViewMap }) {
   const last = data?.at(-1)
   const profile = SCENARIO_PROFILES[scenario] || SCENARIO_PROFILES.leak
   const [ai, setAi] = useState(null)
@@ -203,7 +206,7 @@ function Overview({ active, data, scenario = 'leak', setPage, trigger, onExport,
             </Button>
           </CardHeader>
           <CardContent>
-            <NetworkMap incidentActive={active} compact scenario={scenario} onSelectSegment={() => setPage('network')} />
+            <NetworkMap incidentActive={active} compact scenario={scenario} onSelectSegment={() => setPage('network')} onViewMap={onViewMap} />
           </CardContent>
         </Card>
 
@@ -228,6 +231,21 @@ function Overview({ active, data, scenario = 'leak', setPage, trigger, onExport,
                   <div className="flex justify-between">
                     <dt className="text-muted-foreground">Est. loss</dt>
                     <dd className="font-medium">{fmt(Math.round(loss))} L/hr</dd>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <dt className="text-muted-foreground">Coordinates</dt>
+                    <dd className="font-medium font-mono text-xs text-cyan-400 flex items-center gap-1">
+                      <span>{ai?.location?.latitude ? `${Number(ai.location.latitude).toFixed(4)}°, ${Number(ai.location.longitude).toFixed(4)}°` : '22.5726°, 88.3639°'}</span>
+                      {onViewMap && (
+                        <button
+                          onClick={() => onViewMap(ai?.location || getFaultLocation(segment))}
+                          className="hover:underline text-cyan-300 ml-1 cursor-pointer font-sans text-xs"
+                          title="View on Map"
+                        >
+                          [Map]
+                        </button>
+                      )}
+                    </dd>
                   </div>
                 </dl>
                 <div className="flex gap-2 pt-1">
@@ -296,18 +314,27 @@ function Overview({ active, data, scenario = 'leak', setPage, trigger, onExport,
 
 /* -------------------------------- Network ------------------------------- */
 
-function NetworkPage({ active, scenario = 'leak' }) {
+function NetworkPage({ active, scenario = 'leak', onViewMap }) {
+  const suspectedSegment = scenario === 'demand' ? 'N1 → Zone C' : scenario === 'sensor' ? 'N1 → B2' : 'B2 → B3'
+  const faultLoc = getFaultLocation(suspectedSegment)
+
   return (
     <div className="space-y-4">
       <PageSection
         eyebrow="Topology"
         title="Distribution map"
         description="Prototype network. Highlight follows the AI localization."
-        action={active && <Badge variant="destructive">Suspected: B2 → B3</Badge>}
+        action={active && <Badge variant="destructive">Suspected: {suspectedSegment}</Badge>}
       >
-        <NetworkMap incidentActive={active} scenario={scenario} />
+        <NetworkMap incidentActive={active} scenario={scenario} onViewMap={onViewMap} />
       </PageSection>
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-3">
+        <FaultLocationCard
+          location={faultLoc}
+          active={active}
+          onViewMap={onViewMap}
+          title={active ? 'Suspected Fault Location' : 'Asset Location'}
+        />
         <Card>
           <CardHeader>
             <CardTitle className="text-sm font-medium">Components</CardTitle>
@@ -329,8 +356,8 @@ function NetworkPage({ active, scenario = 'leak' }) {
             <CardDescription>How the suspected segment is chosen</CardDescription>
           </CardHeader>
           <CardContent className="text-sm leading-6 text-muted-foreground">
-            Abnormal telemetry is combined with the NetworkX topology to rank the most plausible segment. A production
-            connector could supply SCADA, GIS and hydraulic-model data here.
+            Abnormal telemetry is combined with the NetworkX topology to rank the most plausible segment. GIS
+            coordinates locate the affected physical node for field response.
           </CardContent>
         </Card>
       </div>
@@ -1200,7 +1227,7 @@ function TemporalCard({ active, temporal, live }) {
 
 /* ------------------------------ Investigation ---------------------------- */
 
-function InvestigationPage({ active, verify, verified, verifyResult, onExport, onExportPDF, data, scenario = 'leak', setScenario, setPage }) {
+function InvestigationPage({ active, verify, verified, verifyResult, onExport, onExportPDF, data, scenario = 'leak', setScenario, setPage, onViewMap }) {
   const fallback = SCENARIO_PROFILES[scenario] || SCENARIO_PROFILES.leak
   const [ai, setAi] = useState(null)
   const [live, setLive] = useState(false)
@@ -1246,6 +1273,7 @@ function InvestigationPage({ active, verify, verified, verifyResult, onExport, o
   const last = data?.at(-1)
   const temporal = ai?.temporal ?? (active && last ? mockTemporal(last, data) : null)
   const temporalLive = live && !!ai?.temporal
+  const faultLoc = ai?.location?.latitude != null ? ai.location : getFaultLocation(segment)
   return (
     <div className="space-y-4">
       <PageSection
@@ -1295,6 +1323,21 @@ function InvestigationPage({ active, verify, verified, verifyResult, onExport, o
                       <dt className="text-muted-foreground">Probable location</dt>
                       <dd className="font-medium">{segment} ({locConf}% confidence)</dd>
                     </div>
+                    <div className="flex justify-between items-center">
+                      <dt className="text-muted-foreground">Coordinates</dt>
+                      <dd className="font-medium font-mono text-xs text-cyan-400 flex items-center gap-1">
+                        <span>{faultLoc?.latitude ? `${Number(faultLoc.latitude).toFixed(4)}°, ${Number(faultLoc.longitude).toFixed(4)}°` : '—'}</span>
+                        {onViewMap && faultLoc?.latitude != null && (
+                          <button
+                            onClick={() => onViewMap(faultLoc)}
+                            className="hover:underline text-cyan-300 ml-1 cursor-pointer font-sans text-xs"
+                            title="View on Map"
+                          >
+                            [Map]
+                          </button>
+                        )}
+                      </dd>
+                    </div>
                     <div className="flex justify-between">
                       <dt className="text-muted-foreground">Primary hypothesis</dt>
                       <dd className="font-medium">{hypothesis}</dd>
@@ -1341,6 +1384,13 @@ function InvestigationPage({ active, verify, verified, verifyResult, onExport, o
             </CardContent>
           </Card>
         </div>
+
+        <FaultLocationCard
+          location={faultLoc}
+          active={active}
+          onViewMap={onViewMap}
+          title={active ? 'Suspected Fault Location' : 'Asset Location'}
+        />
 
         <EvidenceDiagnosisCard
           active={active}
@@ -2049,6 +2099,14 @@ export default function App() {
   const [verifyResult, setVerifyResult] = useState(null)
   const [toast, setToast] = useState(null)
   const [backendOnline, setBackendOnline] = useState(false)
+  const [mapModalOpen, setMapModalOpen] = useState(false)
+  const [selectedMapLocation, setSelectedMapLocation] = useState(null)
+
+  const handleOpenMap = (loc) => {
+    const defaultLoc = getFaultLocation(scenario === 'demand' ? 'N1 → Zone C' : scenario === 'sensor' ? 'N1 → B2' : 'B2 → B3')
+    setSelectedMapLocation(loc || defaultLoc)
+    setMapModalOpen(true)
+  }
 
   const handleDataSourceModeChange = (newMode) => {
     setDataSourceMode(newMode)
@@ -2140,9 +2198,14 @@ export default function App() {
   }
 
   const exportReport = () => {
+    const suspectedSegment = scenario === 'demand' ? 'N1 → Zone C' : scenario === 'sensor' ? 'N1 → B2' : 'B2 → B3'
+    const gisLoc = getFaultLocation(suspectedSegment)
     const report = {
       timestamp: new Date().toISOString(),
-      activeIncident: active ? (SCENARIO_PROFILES[scenario] || incidents[0]) : null,
+      activeIncident: active ? {
+        ...(SCENARIO_PROFILES[scenario] || incidents[0]),
+        gis_location: gisLoc,
+      } : null,
       telemetrySnapshot: data,
       systemStatus: active ? 'ALERT' : 'NORMAL',
     }
@@ -2177,6 +2240,10 @@ export default function App() {
     const seg = ai?.location?.segment ?? profile.location ?? '—'
     const zone = ai?.location?.zone ? `Zone ${ai.location.zone}` : profile.zone ?? '—'
     const locConf = ai?.location?.confidence ?? fallback?.confidence ?? '—'
+    const locObj = ai?.location?.latitude != null ? ai.location : getFaultLocation(seg)
+    const locGisText = locObj?.gis_configured && locObj?.latitude != null
+      ? `${Number(locObj.latitude).toFixed(4)}° N, ${Number(locObj.longitude).toFixed(4)}° E (${locObj.asset_name || locObj.asset_id}) [Source: ${locObj.location_source || 'Demo GIS'}]`
+      : 'Location coordinates unavailable (GIS not configured)'
     const score = ai?.anomalyScore != null ? Number(ai.anomalyScore).toFixed(2) : (last?.anomalyScore != null ? Number(last.anomalyScore).toFixed(2) : '—')
     const pipe = ai?.pipeCondition ? `${ai.pipeCondition.state} (eddy ${Number(ai.pipeCondition.eddy).toFixed(2)})` : '—'
     const tFactors = ai?.temporal ? Object.entries(ai.temporal.factors).map(([k, v]) => `${k.replace(/_/g, ' ')} ${v}`).join(' · ') : ''
@@ -2223,6 +2290,7 @@ th{background:#eee}.meta{color:#555;font-size:11px;margin-top:16px}ol{margin:8px
 <tr><td>Severity</td><td>${esc(sev)}</td></tr>
 <tr><td>Confidence</td><td>${esc(conf)}${conf === '—' ? '' : '%'}</td></tr>
 <tr><td>Probable location</td><td>${esc(seg)} · ${esc(zone)} (${esc(locConf)}${locConf === '—' ? '' : '%'} confidence)</td></tr>
+<tr><td>GIS Coordinates</td><td>${esc(locGisText)}</td></tr>
 <tr><td>ML anomaly score</td><td>${esc(score)}</td></tr>
 <tr><td>Pipe condition</td><td>${esc(pipe)}</td></tr>
 <tr><td>Temporal score</td><td>${esc(tScore)}</td></tr></table>
@@ -2277,9 +2345,10 @@ ${simRows ? `<h2>6. Observed vs simulated flow</h2><table><tr><th>Time</th><th>O
             setDataSourceMode('real')
             setPage('monitoring')
           }}
+          onViewMap={handleOpenMap}
         />
       )
-    if (page === 'network') return <NetworkPage active={active} scenario={scenario} />
+    if (page === 'network') return <NetworkPage active={active} scenario={scenario} onViewMap={handleOpenMap} />
     if (page === 'monitoring')
       return (
         <MonitoringPage
@@ -2302,6 +2371,7 @@ ${simRows ? `<h2>6. Observed vs simulated flow</h2><table><tr><th>Time</th><th>O
           scenario={scenario}
           setScenario={handleScenarioChange}
           setPage={setPage}
+          onViewMap={handleOpenMap}
         />
       )
     if (page === 'impact') return <ImpactPage active={active} data={data} scenario={scenario} />
@@ -2322,6 +2392,12 @@ ${simRows ? `<h2>6. Observed vs simulated flow</h2><table><tr><th>Time</th><th>O
       )}
       <AmbientNetwork incidentActive={active} scenario={scenario} />
       <Toast toast={toast} onClose={() => setToast(null)} />
+      <FaultMapModal
+        isOpen={mapModalOpen}
+        onClose={() => setMapModalOpen(false)}
+        location={selectedMapLocation}
+        incidentActive={active}
+      />
       <div className="relative z-10 lg:flex">
         <Sidebar
           page={page}

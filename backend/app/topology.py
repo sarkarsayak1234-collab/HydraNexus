@@ -14,6 +14,8 @@ Software-first: no SCADA/GIS required; topology is code-defined.
 from __future__ import annotations
 import networkx as nx
 
+from .gis import get_fault_location, get_asset_location
+
 
 def build_graph() -> nx.DiGraph:
     g = nx.DiGraph()
@@ -68,10 +70,22 @@ def graph_payload(incident_active: bool = False):
     """Return frontend-compatible nodes/edges payload."""
     nodes = []
     for nid, attrs in GRAPH.nodes(data=True):
+        loc = get_asset_location(nid) or {}
+        data = {k: v for k, v in attrs.items() if k not in ("x", "y")}
+        if loc:
+            data.update({
+                "asset_id": loc.get("asset_id"),
+                "asset_name": loc.get("asset_name"),
+                "asset_type": loc.get("asset_type"),
+                "latitude": loc.get("latitude"),
+                "longitude": loc.get("longitude"),
+                "elevation_m": loc.get("elevation_m"),
+                "location_source": loc.get("source"),
+            })
         nodes.append({
             "id": nid,
             "position": {"x": attrs.get("x", 0), "y": attrs.get("y", 0)},
-            "data": {k: v for k, v in attrs.items() if k not in ("x", "y")},
+            "data": data,
             "type": "input" if nid == "reservoir" else "default",
         })
     edges = []
@@ -118,6 +132,7 @@ def localize(flow_delta_pct: float, pressure_delta_pct: float, consumption_delta
     base = meta["localization_confidence"]
     strength = min(abs(flow_delta_pct) / 35.0, 1.0) * 0.6 + min(abs(pressure_delta_pct) / 18.0, 1.0) * 0.4
     confidence = int(max(45, min(96, base * (0.75 + 0.35 * strength))))
+    gis_info = get_fault_location(seg)
     return {
         "segment": seg,
         "edge_id": meta["edge_id"],
@@ -125,4 +140,13 @@ def localize(flow_delta_pct: float, pressure_delta_pct: float, consumption_delta
         "users": meta["users"],
         "confidence": confidence,
         "downstream": downstream_nodes(meta["from"]),
+        "asset_id": gis_info.get("asset_id", "N3"),
+        "asset_name": gis_info.get("asset_name", "B2 Junction"),
+        "asset_type": gis_info.get("asset_type", "junction"),
+        "latitude": gis_info.get("latitude"),
+        "longitude": gis_info.get("longitude"),
+        "elevation_m": gis_info.get("elevation_m"),
+        "location_source": gis_info.get("location_source"),
+        "gis_configured": gis_info.get("configured", False),
+        "location_message": gis_info.get("message"),
     }

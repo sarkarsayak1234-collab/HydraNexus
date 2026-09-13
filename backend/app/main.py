@@ -46,6 +46,7 @@ def health():
 
 
 @app.get("/api/network/graph")
+@app.get("/api/graph")
 def network_graph(incidentActive: bool = False):
     return graph_payload(incident_active=incidentActive)
 

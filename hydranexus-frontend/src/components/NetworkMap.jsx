@@ -1,7 +1,9 @@
 import { useState } from 'react'
+import { MapPin } from 'lucide-react'
 import ReactFlow, { Background, Controls, MiniMap, Handle, Position } from 'reactflow'
 import 'reactflow/dist/style.css'
 import { networkEdges, networkNodes } from '../data'
+import { getAssetGIS } from '../gis'
 
 function getNodeIcon(label, type) {
   const l = (label || '').toLowerCase()
@@ -91,7 +93,7 @@ function MinimalNode({ data, selected }) {
 
 const nodeTypes = { hydraulic: MinimalNode, default: MinimalNode, input: MinimalNode }
 
-export default function NetworkMap({ incidentActive = false, compact = false, onSelectSegment, scenario = 'leak' }) {
+export default function NetworkMap({ incidentActive = false, compact = false, onSelectSegment, scenario = 'leak', onViewMap }) {
   const [activeNode, setActiveNode] = useState(null)
   const decay = scenario === 'corrosion'
 
@@ -121,6 +123,8 @@ export default function NetworkMap({ incidentActive = false, compact = false, on
       labelStyle: { fontSize: 10, fill: isIncidentEdge ? (decay ? '#fb923c' : '#f87171') : '#38bdf8', fontWeight: 600 },
     }
   })
+
+  const nodeGis = activeNode ? getAssetGIS(activeNode.id) : null
 
   return (
     <div className={`relative ${compact ? 'h-[340px]' : 'h-[500px]'} overflow-hidden rounded-xl border border-slate-800/80 bg-[#091526]/90 backdrop-blur-xs shadow-inner`}>
@@ -166,7 +170,7 @@ export default function NetworkMap({ incidentActive = false, compact = false, on
             <div className="text-xs font-bold text-white">{activeNode.data.label}</div>
             <button
               onClick={() => setActiveNode(null)}
-              className="rounded p-0.5 text-slate-400 hover:bg-slate-800 hover:text-white"
+              className="rounded p-0.5 text-slate-400 hover:bg-slate-800 hover:text-white cursor-pointer"
               aria-label="Close node details"
             >
               ×
@@ -192,6 +196,30 @@ export default function NetworkMap({ incidentActive = false, compact = false, on
               </div>
             )}
           </dl>
+
+          {nodeGis && (
+            <div className="mt-2.5 border-t border-slate-800/80 pt-2 text-[11px] font-mono">
+              <div className="flex items-center justify-between text-slate-400">
+                <span>Coordinates</span>
+                <span className="text-cyan-300 font-semibold">
+                  {nodeGis.latitude.toFixed(4)}°, {nodeGis.longitude.toFixed(4)}°
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-slate-400 mt-1">
+                <span>Source</span>
+                <span className="text-emerald-400">{nodeGis.source}</span>
+              </div>
+              {onViewMap && (
+                <button
+                  onClick={() => onViewMap(nodeGis)}
+                  className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-lg bg-cyan-600/90 hover:bg-cyan-500 py-1.5 text-xs font-medium text-white shadow-xs transition-colors cursor-pointer"
+                >
+                  <MapPin className="h-3.5 w-3.5" />
+                  <span>View on Map</span>
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
