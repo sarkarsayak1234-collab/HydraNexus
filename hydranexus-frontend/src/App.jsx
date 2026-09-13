@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react'
-import { CheckCircle2, AlertTriangle, Download, FileText, Play, X, Database } from 'lucide-react'
+import { CheckCircle2, AlertTriangle, Download, FileText, Play, X, Database, MapPin } from 'lucide-react'
 import Sidebar from './components/Sidebar'
 import PageHeader from './components/PageHeader'
 import NetworkMap from './components/NetworkMap'
@@ -320,21 +320,46 @@ function NetworkPage({ active, scenario = 'leak', onViewMap }) {
 
   return (
     <div className="space-y-4">
+      {/* 1. TOP PROMINENT FAULT LOCATION CARD (ALWAYS VISIBLE ABOVE THE FOLD) */}
+      <FaultLocationCard
+        location={faultLoc}
+        active={active}
+        onViewMap={onViewMap}
+        title={active ? 'Suspected Fault Location' : 'Monitored Asset GIS'}
+      />
+
       <PageSection
-        eyebrow="Topology"
+        eyebrow="Topology & GIS"
         title="Distribution map"
-        description="Prototype network. Highlight follows the AI localization."
-        action={active && <Badge variant="destructive">Suspected: {suspectedSegment}</Badge>}
+        description="Hydraulic network topology and geospatial GIS fault location."
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            {active && (
+              <>
+                <Badge variant="destructive">Suspected: {suspectedSegment}</Badge>
+                <span className="hidden sm:inline-flex items-center gap-1 rounded-md border border-cyan-700/60 bg-cyan-950/60 px-2.5 py-1 text-xs font-mono font-semibold text-cyan-300">
+                  <MapPin className="h-3 w-3 text-cyan-400" />
+                  {faultLoc.latitude.toFixed(4)}° N, {faultLoc.longitude.toFixed(4)}° E
+                </span>
+                {onViewMap && (
+                  <Button
+                    size="sm"
+                    onClick={() => onViewMap(faultLoc)}
+                    className="bg-cyan-600 hover:bg-cyan-500 text-white font-mono text-xs h-7 px-3 shadow-sm cursor-pointer"
+                  >
+                    <MapPin className="h-3.5 w-3.5 mr-1" />
+                    View on Map
+                  </Button>
+                )}
+              </>
+            )}
+          </div>
+        }
       >
         <NetworkMap incidentActive={active} scenario={scenario} onViewMap={onViewMap} />
       </PageSection>
-      <div className="grid gap-4 lg:grid-cols-3">
-        <FaultLocationCard
-          location={faultLoc}
-          active={active}
-          onViewMap={onViewMap}
-          title={active ? 'Suspected Fault Location' : 'Asset Location'}
-        />
+
+      <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle className="text-sm font-medium">Components</CardTitle>
