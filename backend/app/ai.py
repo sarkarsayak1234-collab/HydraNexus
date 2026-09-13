@@ -26,6 +26,7 @@ from .simulator import (
     generate_telemetry, deviation_pct, estimate_loss,
 )
 from .topology import localize
+from temporal import analyze_temporal
 
 _MODEL: IsolationForest | None = None
 
@@ -430,7 +431,16 @@ def analyze(telemetry: list[dict]) -> dict:
     if top_cause == "Early Corrosion" and severity == "HIGH":
         severity = "MEDIUM"  # maintenance warning, not an emergency
     evidence = build_evidence(latest, dev, causes, location, eddy_last, eddy_rise, pipe)
-    is_anomaly = score >= 0.5 or severity in ("HIGH", "MEDIUM") or top_cause == "Early Corrosion"
+    # Temporal Intelligence layer: recent behavior, never future data. Wrapped
+    # so the existing pipeline keeps working even if temporal computation fails.
+    try:
+        temporal = analyze_temporal(telemetry, if_score=score)
+    except Exception:
+        temporal = None
+    if temporal:
+        evidence = evidence + temporal["evidence_lines"][:2]
+    t_alarm = bool(temporal and temporal.get("alarm"))
+    is_anomaly = score >= 0.5 or severity in ("HIGH", "MEDIUM") or top_cause == "Early Corrosion" or t_alarm
     operator_note = (
         "Evidence-backed recommendation only — a qualified operator must approve any intervention. "
         f"Severity {severity} with {loss:,.0f} L/hr estimated loss."
@@ -459,6 +469,7 @@ def analyze(telemetry: list[dict]) -> dict:
             "severity": severity,
         },
         "evidence": evidence,
+        "temporal": temporal,
         "explanation": build_explanation(latest, dev, score, causes, severity, evidence),
         "operatorNote": operator_note,
     }

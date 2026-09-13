@@ -336,6 +336,118 @@ def test_real_data_event_focus():
     assert len(j["telemetry"]) == 12
 
 
+def _synthetic_5min(n, flow_fn, press_fn, start="2026-01-01 00:00:00"):
+    import datetime
+    t0 = datetime.datetime.strptime(start, "%Y-%m-%d %H:%M:%S")
+    pts = []
+    for i in range(n):
+        t = (t0 + datetime.timedelta(minutes=5 * i)).strftime("%Y-%m-%d %H:%M:%S")
+        pts.append({"time": t, "flow": flow_fn(i), "pressure": press_fn(i),
+                    "consumption": 3000.0})
+    return pts
+
+
+def test_temporal_lags_exact():
+    from temporal.feature_engine import lag_lookup, monotonic_minutes
+    pts = _synthetic_5min(12, lambda i: 8000.0 + 100.0 * i, lambda i: 4.0)
+    times = monotonic_minutes([p["time"] for p in pts])
+    flows = [p["flow"] for p in pts]
+    for lag, expected in ((5, 9000.0), (15, 8800.0), (30, 8500.0)):
+        lk = lag_lookup(times, flows, 11, lag)
+        assert lk["value"] == expected, (lag, lk)
+        assert lk["actual_minutes"] == float(lag) and lk["truncated"] is False
+
+
+def test_temporal_rolling_stats():
+    from temporal.feature_engine import point_features, monotonic_minutes
+    pts = _synthetic_5min(8, lambda i: 8000.0, lambda i: 4.0)
+    times = monotonic_minutes([p["time"] for p in pts])
+    series = {"flow": [p["flow"] for p in pts], "pressure": [p["pressure"] for p in pts]}
+    f = point_features(times, series, 7)
+    assert f["signals"]["flow"]["rolling"]["mean"] == 8000.0
+    assert f["signals"]["flow"]["rolling"]["std"] == 0.0
+    assert f["signals"]["flow"]["rolling"]["z"] == 0.0
+    pts2 = _synthetic_5min(3, lambda i: [8000.0, 8100.0, 8200.0][i], lambda i: 4.0)
+    t2 = monotonic_minutes([p["time"] for p in pts2])
+    s2 = {"flow": [p["flow"] for p in pts2], "pressure": [p["pressure"] for p in pts2]}
+    f2 = point_features(t2, s2, 2)
+    assert f2["signals"]["flow"]["rolling"]["mean"] == 8100.0
+    assert abs(f2["signals"]["flow"]["rolling"]["std"] - 81.6496) < 0.01
+
+
+def test_temporal_trend():
+    from temporal.feature_engine import point_features, monotonic_minutes
+    pts = _synthetic_5min(7, lambda i: 8000.0 + 100.0 * i, lambda i: 4.0)
+    times = monotonic_minutes([p["time"] for p in pts])
+    series = {"flow": [p["flow"] for p in pts], "pressure": [p["pressure"] for p in pts]}
+    f = point_features(times, series, 6)
+    tr = f["signals"]["flow"]["trend"]
+    assert tr["direction"] == "rising" and tr["slope_per_min"] > 0
+    assert tr["change_pct_30m"] > 5.0
+
+
+def test_temporal_persistence():
+    from temporal.persistence import persistence_status
+    times = [float(i * 5) for i in range(5)]
+    p = persistence_status([False, False, True, True, True], times, 4)
+    assert p["consecutive_points"] == 3 and p["duration_minutes"] == 10.0
+    assert p["grade"] == "HIGH"
+    q = persistence_status([False, False, False, True], times[:4], 3)
+    assert q["grade"] == "LOW"  # lone spike is never HIGH persistence
+
+
+def test_temporal_missing_data():
+    from temporal import analyze_temporal
+    pts = _synthetic_5min(8, lambda i: 8000.0, lambda i: 4.0)
+    pts[3]["flow"] = None
+    pts[5]["pressure"] = None
+    r = analyze_temporal(pts, if_score=0.2)
+    assert r["score"] is not None and "factors" in r and "why" in r
+
+
+def test_temporal_no_future_leakage():
+    from temporal.feature_engine import point_features, monotonic_minutes
+    from temporal import analyze_temporal
+    base = generate_telemetry("normal", points=8)
+    t1 = monotonic_minutes([p["time"] for p in base])
+    s1 = {"flow": [p["flow"] for p in base], "pressure": [p["pressure"] for p in base]}
+    f_before = point_features(t1, s1, 4)
+    extended = base + generate_telemetry("leak", points=4)
+    r_before = analyze_temporal(base)["score"]
+    t2 = monotonic_minutes([p["time"] for p in extended])
+    s2 = {"flow": [p["flow"] for p in extended], "pressure": [p["pressure"] for p in extended]}
+    f_after = point_features(t2, s2, 4)
+    assert f_before == f_after  # future spike cannot rewrite past features
+    assert analyze_temporal(base)["score"] == r_before
+
+
+def test_temporal_fusion_detect_endpoint():
+    data = generate_telemetry("leak")
+    r = client.post("/api/ai/detect", json={"telemetry": data})
+    j = r.json()
+    t = j["temporal"]
+    assert set(t["factors"]) == {"flow_deviation", "pressure_deviation", "trend",
+                                 "persistence", "historical_context"}
+    assert t["factors"]["flow_deviation"] == "HIGH"
+    assert 0.0 <= t["score"] <= 1.0 and t["no_future_leakage"] is True
+    assert any("Temporal pattern" in e for e in j["evidence"])
+    # Existing behavior preserved.
+    assert j["primaryHypothesis"] == "Confirmed Leak" and j["severity"] == "HIGH"
+    r = client.post("/api/ai/detect", json={"telemetry": generate_telemetry("normal")})
+    assert r.json()["severity"] in ("NORMAL", "LOW")
+
+
+def test_temporal_real_shaped_window():
+    # Full-timestamp 5-min SCADA-shaped window, model-free (no sim-trained model).
+    from temporal import analyze_temporal
+    pts = _synthetic_5min(24, lambda i: 180.0 + (60.0 if i >= 18 else 0.0),
+                          lambda i: 42.0 - (6.0 if i >= 18 else 0.0))
+    r = analyze_temporal(pts, if_score=None)
+    assert r["score_components"]["model"] is None
+    assert r["factors"]["flow_deviation"] in ("MEDIUM", "HIGH")
+    assert r["persistence"]["grade"] in ("MEDIUM", "HIGH")
+
+
 if __name__ == "__main__":
     import time
     tests = sorted({k: v for k, v in globals().items() if k.startswith("test_")}.items())

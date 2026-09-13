@@ -1065,6 +1065,139 @@ function EvidenceDiagnosisCard({ active, ai, data, scenario = 'leak', segment, l
   )
 }
 
+/* --------------------- Temporal Intelligence --------------------- */
+
+function mockTemporal(last, data) {
+  // Labeled offline fallback: simplified causal grades from the actual feed.
+  const nums = (k) => (data || []).map((d) => Number(d[k])).filter((v) => Number.isFinite(v))
+  const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0)
+  const band = (absPct, hi, md) => (absPct >= hi ? 'HIGH' : absPct >= md ? 'MEDIUM' : 'LOW')
+  const toMin = (t) => {
+    const m = String(t ?? '').match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*$/)
+    if (!m) return null
+    return Number(m[1]) * 60 + Number(m[2]) + (m[3] ? Number(m[3]) / 60 : 0)
+  }
+  const rawTimes = (data || []).map((d) => toMin(d.time))
+  const times = rawTimes.every((v) => v != null)
+    ? rawTimes.map((v, i, a) => (i > 0 && v < a[i - 1] - 720 ? v + 1440 : v))
+    : (data || []).map((_, i) => i * 5)
+  const flows = nums('flow')
+  const press = nums('pressure')
+  const k = Math.max(1, Math.floor(flows.length / 3))
+  const refF = mean(flows.slice(0, k)) || 8000
+  const refP = mean(press.slice(0, k)) || 4.0
+  const fPct = ((Number(last?.flow) - refF) / Math.abs(refF)) * 100
+  const pPct = ((Number(last?.pressure) - refP) / Math.abs(refP)) * 100
+  const fDev = band(Math.abs(fPct), 25, 12)
+  const pDev = band(Math.abs(pPct), 15, 8)
+  const tail = Math.min(6, flows.length)
+  const slope = (arr) => {
+    if (arr.length < 2) return 0
+    const n = arr.length
+    const mx = (n - 1) / 2
+    const my = mean(arr)
+    let sxx = 0
+    let sxy = 0
+    arr.forEach((y, i) => { sxx += (i - mx) * (i - mx); sxy += (i - mx) * (y - my) })
+    return sxx > 0 ? sxy / sxx : 0
+  }
+  const spanMin = times.length >= 2 ? Math.max(5, times[times.length - 1] - times[Math.max(0, times.length - tail)]) : 5
+  const trendPct = (arr, ref) => {
+    if (arr.length < 2 || !ref) return 0
+    const perStep = slope(arr)
+    const minutesPerStep = spanMin / (arr.length - 1)
+    return ((perStep / Math.max(minutesPerStep, 1e-9)) * 30) / Math.abs(ref) * 100
+  }
+  const fT = trendPct(flows.slice(-tail), refF)
+  const pT = trendPct(press.slice(-tail), refP)
+  const tGrade = Math.abs(fT) >= 12 || Math.abs(pT) >= 6 ? 'HIGH' : Math.abs(fT) >= 5 || Math.abs(pT) >= 2.5 ? 'MEDIUM' : 'LOW'
+  const flags = flows.map((_, i) => {
+    const fw = flows.slice(0, i + 1)
+    const pw = press.slice(0, i + 1)
+    const kk = Math.max(1, Math.floor(fw.length / 3))
+    const rf = mean(fw.slice(0, kk)) || 8000
+    const rp = mean(pw.slice(0, kk)) || 4.0
+    return Math.abs(((fw[i] - rf) / Math.abs(rf)) * 100) >= 12 || Math.abs(((pw[i] - rp) / Math.abs(rp)) * 100) >= 8
+  })
+  let run = 0
+  for (let i = flags.length - 1; i >= 0 && flags[i]; i--) run++
+  const horizon = Math.min(flags.length, 12)
+  const hRun = flags.slice(-horizon).reverse().findIndex((f) => !f)
+  const inH = hRun === -1 ? Math.min(run, horizon) : hRun
+  const ratio = horizon ? inH / horizon : 0
+  const persistence = run >= 3 && ratio >= 0.4 ? 'HIGH' : run >= 2 && ratio >= 0.6 ? 'HIGH' : run >= 2 && ratio >= 0.25 ? 'MEDIUM' : ratio >= 0.5 ? 'MEDIUM' : 'LOW'
+  const priorF = flows.slice(0, -1)
+  const priorP = press.slice(0, -1)
+  let outside = 0
+  if (priorF.length && Number.isFinite(Number(last?.flow))) {
+    const lo = Math.min(...priorF)
+    const hi = Math.max(...priorF)
+    if (Number(last.flow) < lo || Number(last.flow) > hi) outside++
+  }
+  if (priorP.length && Number.isFinite(Number(last?.pressure))) {
+    const lo = Math.min(...priorP)
+    const hi = Math.max(...priorP)
+    if (Number(last.pressure) < lo || Number(last.pressure) > hi) outside++
+  }
+  const context = outside >= 2 ? 'HIGH' : outside >= 1 ? 'MEDIUM' : 'LOW'
+  const val = { HIGH: 1, MEDIUM: 0.55, LOW: 0.15 }
+  const score = Math.round(((val[fDev] + val[pDev] + val[tGrade] + val[persistence] + val[context]) / 5) * 100) / 100
+  const why = []
+  if (fDev !== 'LOW') why.push(`Flow ${fPct >= 0 ? '+' : ''}${fPct.toFixed(1)}% vs window baseline — ${fDev} deviation.`)
+  if (pDev !== 'LOW') why.push(`Pressure ${pPct >= 0 ? '+' : ''}${pPct.toFixed(1)}% vs window baseline — ${pDev} deviation.`)
+  if (tGrade !== 'LOW') why.push(`Short-term trend moving (${fT.toFixed(1)}% flow / ${pT.toFixed(1)}% pressure per 30 min) — ${tGrade} trend.`)
+  if (persistence !== 'LOW') why.push(`Abnormal pattern persisted (${run} recent points anomalous).`)
+  if (!why.length) why.push('Readings track their recent baselines with no sustained abnormal pattern.')
+  return {
+    score,
+    factors: { flow_deviation: fDev, pressure_deviation: pDev, trend: tGrade, persistence, historical_context: context },
+    why: why.slice(0, 4),
+  }
+}
+
+function TemporalCard({ active, temporal, live }) {
+  if (!active || !temporal) return null
+  const factors = [
+    ['Flow Deviation', temporal.factors.flow_deviation],
+    ['Pressure Deviation', temporal.factors.pressure_deviation],
+    ['Trend', temporal.factors.trend],
+    ['Persistence', temporal.factors.persistence],
+    ['Historical Context', temporal.factors.historical_context],
+  ]
+  return (
+    <Card>
+      <CardHeader className="flex-row items-center justify-between space-y-0">
+        <div>
+          <CardTitle className="text-sm font-medium">Temporal Intelligence</CardTitle>
+          <CardDescription>{live ? 'Recent behavior vs window baseline (backend, causal)' : 'Local estimate from feed (backend unreachable)'}</CardDescription>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">Score</span>
+          <span className="text-xl font-semibold">{Number(temporal.score).toFixed(2)}</span>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+          {factors.map(([label, grade]) => (
+            <div key={label} className="rounded-md border p-2 text-center">
+              <p className="text-[11px] text-muted-foreground">{label}</p>
+              <Badge variant={grade === 'HIGH' ? 'destructive' : 'outline'} className="mt-1">{grade}</Badge>
+            </div>
+          ))}
+        </div>
+        <div className="rounded-md bg-secondary p-3">
+          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Why this was flagged</p>
+          <ul className="mt-1 space-y-1">
+            {(temporal.why ?? []).map((w) => (
+              <li key={w} className="text-xs leading-5">{w}</li>
+            ))}
+          </ul>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 /* ------------------------------ Investigation ---------------------------- */
 
 function InvestigationPage({ active, verify, verified, verifyResult, onExport, onExportPDF, data, scenario = 'leak', setScenario, setPage }) {
@@ -1110,6 +1243,9 @@ function InvestigationPage({ active, verify, verified, verifyResult, onExport, o
   const anomalyScore = ai?.anomalyScore ?? null
   const pipe = ai?.pipeCondition ?? null
   const structuralAlert = active && severity === 'HIGH' && pipe?.state === 'Crack'
+  const last = data?.at(-1)
+  const temporal = ai?.temporal ?? (active && last ? mockTemporal(last, data) : null)
+  const temporalLive = live && !!ai?.temporal
   return (
     <div className="space-y-4">
       <PageSection
@@ -1215,6 +1351,8 @@ function InvestigationPage({ active, verify, verified, verifyResult, onExport, o
           live={live}
           setPage={setPage}
         />
+
+        <TemporalCard active={active} temporal={temporal} live={temporalLive} />
 
         <Card>
           <CardHeader>
@@ -2041,6 +2179,8 @@ export default function App() {
     const locConf = ai?.location?.confidence ?? fallback?.confidence ?? '—'
     const score = ai?.anomalyScore != null ? Number(ai.anomalyScore).toFixed(2) : (last?.anomalyScore != null ? Number(last.anomalyScore).toFixed(2) : '—')
     const pipe = ai?.pipeCondition ? `${ai.pipeCondition.state} (eddy ${Number(ai.pipeCondition.eddy).toFixed(2)})` : '—'
+    const tFactors = ai?.temporal ? Object.entries(ai.temporal.factors).map(([k, v]) => `${k.replace(/_/g, ' ')} ${v}`).join(' · ') : ''
+    const tScore = ai?.temporal ? `${Number(ai.temporal.score).toFixed(2)} (${tFactors})` : '—'
     const dev = ai?.deviation_pct ?? {}
     const devTxt = (k, unit) => (dev[k] != null ? `${dev[k] >= 0 ? '+' : ''}${Number(dev[k]).toFixed(1)}% ${unit}` : '—')
     const causeRows = (ai?.causes ?? profile.causes ?? [])
@@ -2084,7 +2224,8 @@ th{background:#eee}.meta{color:#555;font-size:11px;margin-top:16px}ol{margin:8px
 <tr><td>Confidence</td><td>${esc(conf)}${conf === '—' ? '' : '%'}</td></tr>
 <tr><td>Probable location</td><td>${esc(seg)} · ${esc(zone)} (${esc(locConf)}${locConf === '—' ? '' : '%'} confidence)</td></tr>
 <tr><td>ML anomaly score</td><td>${esc(score)}</td></tr>
-<tr><td>Pipe condition</td><td>${esc(pipe)}</td></tr></table>
+<tr><td>Pipe condition</td><td>${esc(pipe)}</td></tr>
+<tr><td>Temporal score</td><td>${esc(tScore)}</td></tr></table>
 <h2>2. Latest telemetry (${esc(last.time ?? '—')})</h2>
 <table><tr><th>Signal</th><th>Reading</th><th>Deviation vs baseline</th></tr>
 <tr><td>Flow</td><td>${last.flow != null ? `${fmt(last.flow)} L/hr` : '—'}</td><td>${esc(devTxt('flow', ''))}</td></tr>
