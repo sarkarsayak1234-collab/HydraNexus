@@ -11,6 +11,7 @@ import {
   Play,
   X,
   Database,
+  ShieldCheck,
 } from 'lucide-react'
 import { cn } from '../lib/utils'
 import { Badge } from './ui/badge'
@@ -20,6 +21,7 @@ const items = [
   ['network', Network, 'Network'],
   ['monitoring', Activity, 'Telemetry'],
   ['real_scada', Database, 'Real SCADA Data'],
+  ['validation', ShieldCheck, 'Validation'],
   ['incident', FileSearch, 'Investigation'],
   ['impact', Gauge, 'Impact'],
   ['whatif', FlaskConical, 'What-If'],

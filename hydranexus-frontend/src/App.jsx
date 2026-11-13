@@ -5,6 +5,7 @@ import PageHeader from './components/PageHeader'
 import NetworkMap from './components/NetworkMap'
 import TelemetryCharts from './components/TelemetryCharts'
 import RealTelemetryCharts from './components/RealTelemetryCharts'
+import ValidationPage from './components/ValidationPage'
 import AmbientNetwork from './components/visual/AmbientNetwork'
 import PageTransition from './components/visual/PageTransition'
 import LandingExperience from './components/landing/LandingExperience'
@@ -69,6 +70,7 @@ const pageMeta = {
   overview: ['Overview', 'Network health and active incidents.'],
   network: ['Network', 'Topology, zones and the suspected fault location.'],
   monitoring: ['Telemetry', 'Flow, pressure, consumption and tank level. Simulated feed.'],
+  validation: ['Validation', 'Ground-truth benchmark of the real-data leak detector (BattLeDIM 2018).'],
   incident: ['Investigation', 'Evidence behind the current hypothesis.'],
   impact: ['Impact', 'Estimated loss, exposure and severity.'],
   whatif: ['What-If', 'Compare interventions before acting.'],
@@ -2383,6 +2385,7 @@ ${simRows ? `<h2>6. Observed vs simulated flow</h2><table><tr><th>Time</th><th>O
           setMode={setDataSourceMode}
         />
       )
+    if (page === 'validation') return <ValidationPage />
     if (page === 'incident')
       return (
         <InvestigationPage
