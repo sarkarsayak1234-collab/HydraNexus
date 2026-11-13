@@ -155,10 +155,10 @@ export async function fetchRealDataTelemetry({ start, end, points = 24, event_pi
   return j
 }
 
-// Ground-truth validation benchmark. Cold start (reference model build +
-// full replay) can take ~30-60 s server-side, so allow a long timeout.
+// Ground-truth validation benchmark. A cold Render instance needs ~3 min
+// (reference model build + full replay), so allow a long timeout.
 export async function fetchRealDataEvaluate() {
-  const j = await fetchJson('/api/real-data/evaluate', {}, 120000)
+  const j = await fetchJson('/api/real-data/evaluate', {}, 240000)
   return j
 }
 

@@ -453,6 +453,32 @@ def analyze_real(points: List[Dict[str, Any]]) -> dict:
         if bool(scored["sustained_alarm"].iloc[i])
     ]
 
+    # Per-step window detail for the UI: the hour-of-day typical level (median
+    # and robust sigma) for inflow / average pressure at each timestamp, plus
+    # the detector's per-step alarm flags. This is what lets the frontend draw
+    # the "normal for this hour" baseline and colour readings that leave it.
+    step_hours = [_hour_of(str(p.get("time") or "")) for p in points]
+    flow_med, flow_sc = _hour_lookup(ref.stats["flow"], step_hours)
+    press_med, press_sc = _hour_lookup(ref.stats["press_avg"], step_hours)
+
+    def _fin(x, nd=2):
+        return round(float(x), nd) if np.isfinite(x) else None
+
+    window_steps = [
+        {
+            "time": str(points[i]["time"]),
+            "flow_typical": _fin(flow_med[i]),
+            "flow_sigma": _fin(flow_sc[i]),
+            "press_typical": _fin(press_med[i]),
+            "press_sigma": _fin(press_sc[i]),
+            "z_flow": float(scored["z_flow"].iloc[i]),
+            "z_press_avg": float(scored["z_press_avg"].iloc[i]),
+            "alarm": bool(scored["alarm"].iloc[i]),
+            "sustained": bool(scored["sustained_alarm"].iloc[i]),
+        }
+        for i in range(len(points))
+    ][:500]
+
     return {
         "latest": {**points[latest_idx], "anomalyScore": float(latest["anomaly_score"]),
                     "alarm": alarm_now, "reacted_sensor": reacted},
@@ -462,8 +488,9 @@ def analyze_real(points: List[Dict[str, Any]]) -> dict:
         "anomalyScore": float(latest["anomaly_score"]),
         "alarm": alarm_now,
         "alarm_active": any_alarm,
-        "alarm_timestamps": alarm_ts[:12],
+        "alarm_timestamps": alarm_ts[:200],
         "alarm_count": int(scored["sustained_alarm"].sum()),
+        "window_steps": window_steps,
         "primaryHypothesis": primary,
         "severity": severity,
         "confidence": round(float(max(peak_score, float(latest["anomaly_score"])) * 100), 1),

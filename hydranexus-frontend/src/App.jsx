@@ -42,6 +42,8 @@ import {
   fetchRealDataMetadata,
   fetchRealDataLeakages,
   fetchRealDataTelemetry,
+  fetchRealDataEvaluate,
+  postRealDataDetect,
 } from './api'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
@@ -405,6 +407,11 @@ const SCENARIOS = [
   ['corrosion', 'Corrosion / decay'],
 ]
 
+// Session-level cache for the ground-truth benchmark report: the evaluate
+// endpoint can take ~3 min on a cold backend, so it is fetched once per page
+// load at most and shared across page navigations.
+let realEvalCache = null
+
 function MonitoringPage({ scenario, setScenario, mode: propMode, setMode: propSetMode }) {
   const [internalMode, setInternalMode] = useState(propMode || 'demo')
   const mode = propMode !== undefined ? propMode : internalMode
@@ -421,6 +428,10 @@ function MonitoringPage({ scenario, setScenario, mode: propMode, setMode: propSe
   const [realResp, setRealResp] = useState(null)
   const [loadingReal, setLoadingReal] = useState(false)
   const [mapModalOpen, setMapModalOpen] = useState(false)
+  // Ground-truth benchmark (per-episode detected/latency) + live detector run
+  // over the currently viewed window (drives the alarm overlay + verdict card).
+  const [realReport, setRealReport] = useState(null)
+  const [realDetect, setRealDetect] = useState(null)
 
   // Demo telemetry effect
   useEffect(() => {
@@ -474,12 +485,64 @@ function MonitoringPage({ scenario, setScenario, mode: propMode, setMode: propSe
     }
   }, [mode, selectedEventPipe, realPoints])
 
+  // Ground-truth benchmark report — fetched once per session (module cache),
+  // non-blocking: dropdown + verdict annotate themselves when it arrives.
+  useEffect(() => {
+    if (mode !== 'real') return
+    let cancelled = false
+    if (realEvalCache) {
+      setRealReport(realEvalCache)
+      return
+    }
+    const load = (attempt) => {
+      fetchRealDataEvaluate()
+        .then((r) => {
+          realEvalCache = r
+          if (!cancelled) setRealReport(r)
+        })
+        .catch(() => {
+          // Cold Render instances can exceed the fetch timeout — retry once.
+          if (!cancelled && attempt < 1) setTimeout(() => load(attempt + 1), 8000)
+        })
+    }
+    load(0)
+    return () => {
+      cancelled = true
+    }
+  }, [mode])
+
+  // Live detector run over the currently viewed window (SCADA signals only —
+  // the detector never reads the leak_rate / active_leaks fields).
+  useEffect(() => {
+    if (mode !== 'real' || !realResp?.telemetry?.length) return
+    let cancelled = false
+    setRealDetect(null)
+    postRealDataDetect(realResp.telemetry)
+      .then((d) => {
+        if (!cancelled) setRealDetect(d)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [mode, realResp])
+
   const demoData = live || mocks[scenario]
   const demoLast = demoData.at(-1)
   const demoFiltered = search ? demoData.filter((d) => d.time.includes(search) || String(d.flow).includes(search)) : demoData
 
   const realData = realResp?.telemetry || []
   const realLast = realData.length ? realData.at(-1) : null
+  // pipe → benchmark row (event + chronic tiers merged) for dropdown/verdict
+  const detectionByPipe = useMemo(() => {
+    const m = {}
+    for (const e of realReport?.events || []) m[e.pipe] = e
+    for (const e of realReport?.chronic_episodes || []) if (!m[e.pipe]) m[e.pipe] = e
+    return m
+  }, [realReport])
+  const selectedDetection = selectedEventPipe ? detectionByPipe[selectedEventPipe] : null
+  const benchmarkHeadline = realReport?.metrics?.events || null
+  const alarmTimes = realDetect?.alarm_timestamps || []
   const realFiltered = search && realData.length
     ? realData.filter((d) => d.time.includes(search) || String(d.flow).includes(search) || (d.active_leaks && d.active_leaks.some((l) => l.includes(search))))
     : realData
@@ -616,11 +679,25 @@ function MonitoringPage({ scenario, setScenario, mode: propMode, setMode: propSe
                 className="h-9 rounded-md border border-input bg-background px-2 text-xs font-mono"
               >
                 <option value="">Baseline (No Active Leaks)</option>
-                {realLeakEvents.map((ev) => (
-                  <option key={ev.pipe} value={ev.pipe}>
-                    Pipe {ev.pipe} ({ev.start_time.slice(0, 10)} · {ev.max_rate} m³/h · {ev.duration_hours}h)
-                  </option>
-                ))}
+                {realLeakEvents.map((ev) => {
+                  const d = detectionByPipe[ev.pipe]
+                  const suffix = !d
+                    ? realReport
+                      ? ' · no benchmark row'
+                      : ' · checking…'
+                    : d.detected
+                      ? ` · ✓ detected in ${d.latency_min != null ? `${Math.round(d.latency_min)} min` : '—'}`
+                      : ' · ✗ not detected'
+                  return (
+                    <option
+                      key={ev.pipe}
+                      value={ev.pipe}
+                      style={{ color: d && !d.detected ? '#f87171' : undefined }}
+                    >
+                      Pipe {ev.pipe} ({ev.start_time.slice(0, 10)} · {ev.max_rate} m³/h · {ev.duration_hours}h){suffix}
+                    </option>
+                  )
+                })}
               </select>
 
               <select
@@ -669,15 +746,112 @@ function MonitoringPage({ scenario, setScenario, mode: propMode, setMode: propSe
                 />
               </div>
 
-              <RealTelemetryCharts data={realData} />
+              {/* Detector verdict + how-it-works: makes the signal → decision
+                  link explicit instead of leaving the charts unexplained */}
+              <Card className="border-slate-800/80 bg-[#0c1626]/85 backdrop-blur-sm">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-slate-200">Detector verdict — what the model sees and decides</CardTitle>
+                  <CardDescription className="text-[11px] font-mono text-slate-500">
+                    Live re-check on the viewed window · ground truth (leak_rate / active_leaks) is never an input
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-4 text-xs md:grid-cols-3">
+                  {/* Live verdict on the viewed window */}
+                  <div className="space-y-2">
+                    <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500">Live re-check (this window)</div>
+                    {!realDetect ? (
+                      <p className="text-slate-500">Running detector…</p>
+                    ) : (
+                      <>
+                        <div className="flex flex-wrap gap-1.5">
+                          {realDetect.alarm_active ? (
+                            <span className="inline-flex items-center gap-1 rounded border border-rose-500/40 bg-rose-950/50 px-1.5 py-0.5 font-mono text-rose-300">
+                              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-rose-400" /> {realDetect.alarm_count} sustained alarm step{realDetect.alarm_count === 1 ? '' : 's'}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded border border-slate-700 bg-slate-900/60 px-1.5 py-0.5 font-mono text-slate-400">
+                              no sustained alarm in this window
+                            </span>
+                          )}
+                          <span className="inline-flex items-center gap-1 rounded border border-cyan-500/30 bg-cyan-950/40 px-1.5 py-0.5 font-mono text-cyan-300">
+                            {realDetect.primaryHypothesis} · {realDetect.severity}
+                          </span>
+                        </div>
+                        <ul className="space-y-1 font-mono text-[10.5px] leading-relaxed text-slate-400">
+                          {(realDetect.evidence || []).slice(0, 4).map((line, i) => (
+                            <li key={i} className="flex gap-1.5"><span className="text-slate-600">▸</span><span>{line}</span></li>
+                          ))}
+                        </ul>
+                        <p className="font-mono text-[10px] text-slate-600">
+                          Localized at <span className="text-rose-400">{realDetect.location?.reacted_sensor || '—'}</span>
+                          {realDetect.location?.z_press != null && ` (pressure z ${realDetect.location.z_press})`} · unexplained inflow +{Math.round(realDetect.impact?.excessInflowPerHour || 0).toLocaleString()} L/h
+                        </p>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Full-episode benchmark status for the selected leak */}
+                  <div className="space-y-2">
+                    <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500">Full-episode benchmark (causal baselines)</div>
+                    {selectedEventPipe === '' ? (
+                      <p className="text-slate-500">Baseline window — no physical leak active. Used as false-alarm exposure in the benchmark.</p>
+                    ) : !selectedDetection ? (
+                      <p className="text-slate-500">{realReport ? 'No benchmark row for this episode.' : 'Benchmark loading — first run can take ~3 min on the free tier.'}</p>
+                    ) : (
+                      <>
+                        {selectedDetection.detected ? (
+                          <span className="inline-flex items-center gap-1 rounded border border-emerald-500/40 bg-emerald-950/40 px-1.5 py-0.5 font-mono text-emerald-300">
+                            <CheckCircle2 className="h-3 w-3" /> detected in {selectedDetection.latency_min != null ? `${Math.round(selectedDetection.latency_min)} min` : '—'}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded border border-rose-500/40 bg-rose-950/40 px-1.5 py-0.5 font-mono text-rose-300">
+                            <X className="h-3 w-3" /> not detected within 12 h of leak start
+                          </span>
+                        )}
+                        <ul className="space-y-1 font-mono text-[10.5px] leading-relaxed text-slate-400">
+                          <li>▸ Leak ran {selectedDetection.start?.slice(0, 10)} → {selectedDetection.end?.slice(0, 10)} · avg {selectedDetection.avg_rate_m3h} m³/h · {Math.round(selectedDetection.volume_m3 || 0).toLocaleString()} m³ total</li>
+                          {selectedDetection.detected && selectedDetection.first_alarm_at && (
+                            <li>▸ First alarm {selectedDetection.first_alarm_at.slice(11, 16)} on {selectedDetection.first_alarm_at.slice(0, 10)} · {selectedDetection.alarm_points} alarm points in ±24 h window</li>
+                          )}
+                          <li>▸ Peak flow deviation z {selectedDetection.peak_z_flow} · peak score {selectedDetection.peak_score}{selectedDetection.reacted_sensor ? ` · localized ${selectedDetection.reacted_sensor}` : ''}</li>
+                          {selectedDetection.pre_alarms && (
+                            <li>▸ Pre-start alarms are usually true detections of other concurrent leaks, not false alarms</li>
+                          )}
+                        </ul>
+                      </>
+                    )}
+                  </div>
+
+                  {/* How the decision works */}
+                  <div className="space-y-2">
+                    <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500">How the decision is made</div>
+                    <ul className="space-y-1 font-mono text-[10.5px] leading-relaxed text-slate-400">
+                      <li>▸ Hour-of-day median/MAD baselines learned from the days BEFORE the viewed window — no leak labels used</li>
+                      <li>▸ Alarm = inflow ≥2.5σ above hour-typical level (or district meter ≥3σ) AND ≥3 pressure sensors sagging (one ≥3σ), sustained 3 steps</li>
+                      <li>▸ Location = sensor with the strongest pressure drop (argmin z) — highlighted on the GIS map below</li>
+                      {benchmarkHeadline && (
+                        <li>▸ Full-2018 benchmark: {benchmarkHeadline.episodes_detected}/{benchmarkHeadline.episodes_total} event episodes · precision {benchmarkHeadline.precision_pct}% · median latency {benchmarkHeadline.median_latency_min} min — full table on the Validation page</li>
+                      )}
+                    </ul>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <RealTelemetryCharts data={realData} alarms={alarmTimes} steps={realDetect?.window_steps || []} />
 
               {/* Real L-Town GIS map (official BattLeDIM geometry) */}
               <Card className="border-slate-800/80 bg-[#0c1626]/85 backdrop-blur-sm">
                 <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
                   <div>
                     <CardTitle className="text-sm font-medium text-slate-200">L-Town Network — Live GIS View</CardTitle>
-                    <p className="mt-0.5 text-[11px] text-muted-foreground">
-                      Real geometry from the official BattLeDIM network file · reacting sensor and active leaks overlaid
+                    <p className="mt-0.5 max-w-2xl text-[11px] leading-relaxed text-muted-foreground">
+                      This is the <span className="text-slate-300">real pipe network</span> (905 pipes · 42.6 km) from the
+                      official BattLeDIM benchmark file — every grey line is a physical pipe, every cyan dot is one of the
+                      33 pressure sensors. When the detector alarms it names the worst-affected sensor (shown{' '}
+                      <span className="text-rose-400">red</span>); the{' '}
+                      <span className="text-amber-400">orange pipe</span> is where the benchmark&apos;s answer key says
+                      water was physically lost. The closer the red sensor is to the orange pipe, the better the
+                      localization.
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono">
@@ -703,7 +877,6 @@ function MonitoringPage({ scenario, setScenario, mode: propMode, setMode: propSe
                     <LTownMap
                       reactedSensor={realLast?.reacted_sensor || null}
                       activeLeaks={realLast?.active_leaks || []}
-                      focus={realLast?.reacted_sensor || null}
                     />
                   </div>
                 </CardContent>

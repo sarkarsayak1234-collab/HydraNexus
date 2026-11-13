@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ShieldCheck, RefreshCw, AlertTriangle, CheckCircle2, XCircle, Timer, Crosshair, Database, Scale, Map } from 'lucide-react'
+import { ShieldCheck, RefreshCw, AlertTriangle, CheckCircle2, XCircle, Timer, Crosshair, Database, Scale, Map, Download } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card'
 import { Badge } from './ui/badge'
 import LTownMap from './LTownMap'
@@ -63,6 +63,21 @@ export default function ValidationPage() {
     load()
   }, [])
 
+  // Download the raw benchmark report (same JSON /api/real-data/evaluate returns)
+  // so results can be attached as evidence / archived.
+  const exportBenchmark = () => {
+    if (!report) return
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `hydranexus-battledim2018-benchmark-${String(report.generated_at || '').slice(0, 10) || 'report'}.json`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  }
+
   if (loading && !report) {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 text-center">
@@ -121,6 +136,34 @@ export default function ValidationPage() {
         </div>
       </div>
 
+      {/* Plain-language: what this page is and why it matters */}
+      <div className="grid gap-3 rounded-xl border border-slate-800/80 bg-[#0c1626]/60 p-4 text-xs leading-relaxed text-slate-400 md:grid-cols-3">
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-wider text-cyan-400">1 · The data is real</p>
+          <p className="mt-1">
+            BattLeDIM 2018 is a published international benchmark: a full year of real 5-minute sensor readings
+            (105,120 records) from the L-Town water network, plus an official answer key of when and where each of the
+            14 leaks physically happened.
+          </p>
+        </div>
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-wider text-cyan-400">2 · What we ran</p>
+          <p className="mt-1">
+            The exact same detector that powers the live dashboard was replayed over every leak episode and over
+            leak-free control periods — using only the sensor streams, never the answer key.
+          </p>
+        </div>
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-wider text-cyan-400">3 · What the numbers mean</p>
+          <p className="mt-1">
+            <span className="text-slate-200">Recall</span> = of all real leaks, how many we caught.{' '}
+            <span className="text-slate-200">Precision</span> = of all our alarms, how many were real.{' '}
+            <span className="text-slate-200">Latency</span> = minutes from leak start to first alarm.{' '}
+            <span className="text-slate-200">FP rate</span> = how often we cry wolf on a normal day.
+          </p>
+        </div>
+      </div>
+
       {/* Headline metrics */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <MetricTile
@@ -165,13 +208,23 @@ export default function ValidationPage() {
                 resolution. Alarm must fire within 12 h of leak start.
               </p>
             </div>
-            <button
-              onClick={load}
-              disabled={loading}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900/80 px-2.5 py-1.5 text-[11px] font-mono text-slate-300 hover:border-cyan-600/50 hover:text-cyan-300 disabled:opacity-50"
-            >
-              <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} /> Rerun
-            </button>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <button
+                onClick={exportBenchmark}
+                disabled={!report}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900/80 px-2.5 py-1.5 text-[11px] font-mono text-slate-300 hover:border-cyan-600/50 hover:text-cyan-300 disabled:opacity-50"
+                title="Download the full benchmark report as JSON"
+              >
+                <Download className="h-3 w-3" /> Export
+              </button>
+              <button
+                onClick={load}
+                disabled={loading}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900/80 px-2.5 py-1.5 text-[11px] font-mono text-slate-300 hover:border-cyan-600/50 hover:text-cyan-300 disabled:opacity-50"
+              >
+                <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} /> Rerun
+              </button>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
@@ -301,20 +354,25 @@ export default function ValidationPage() {
         <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
           <div>
             <CardTitle className="flex items-center gap-2 text-sm font-medium text-slate-200">
-              <Map className="h-4 w-4 text-emerald-400" /> Leak localization quality — real L-Town GIS
+              <Map className="h-4 w-4 text-emerald-400" /> Where did the AI think the leak was? — real L-Town network
             </CardTitle>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">
-              Amber pipes = ground-truth leak locations (answer key). Markers = the sensor the detector localized
-              (argmin pressure z). Green = detected episodes; dashed lines connect each ground-truth pipe to its
-              localized sensor so localization distance is visible.
+            <p className="mt-0.5 max-w-3xl text-[11px] leading-relaxed text-muted-foreground">
+              Every thin grey line is one of the network&apos;s 905 real pipes. For each real leak episode:{' '}
+              <span className="text-amber-400">the orange pipe is the true leak spot</span> (from the benchmark&apos;s
+              answer key) and <span className="text-emerald-400">the green dot is the sensor our detector blamed</span>{' '}
+              (the one that reacted most). The dashed connector shows the gap between them — a short line means the AI
+              pointed crews close to the right pipe.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono">
             <span className="inline-flex items-center gap-1 rounded border border-amber-500/30 bg-amber-950/40 px-1.5 py-0.5 text-amber-400">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-400" /> ground truth
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-400" /> true leak pipe (answer key)
             </span>
             <span className="inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-950/40 px-1.5 py-0.5 text-emerald-400">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> localized sensor
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> sensor the AI blamed
+            </span>
+            <span className="inline-flex items-center gap-1 rounded border border-slate-700 bg-slate-900/60 px-1.5 py-0.5 text-slate-400">
+              <span className="inline-block h-0 w-4 border-t border-dashed border-slate-500" /> localization gap
             </span>
           </div>
         </CardHeader>

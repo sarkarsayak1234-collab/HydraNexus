@@ -12,7 +12,7 @@
  * coordinate plane (Leaflet CRS.Simple) instead of a map tile layer — an
  * honest GIS view of the benchmark network rather than a fake city map.
  */
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { MapContainer, Polyline, CircleMarker, Tooltip, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -44,21 +44,31 @@ function pipeWeight(dia) {
 
 function FitBounds({ focus }) {
   const map = useMap()
+  const mountedRef = useRef(false)
+  const prevFocusRef = useRef(null)
   useEffect(() => {
-    if (focus) {
-      const c = coords[focus]
-      if (c) map.flyTo([c[1], c[0]], Math.max(map.getZoom(), 2), { duration: 0.8 })
+    // First mount: ALWAYS show the whole network. The initial view must never
+    // be a zoomed-in corner just because a focus target already exists.
+    if (!mountedRef.current) {
+      mountedRef.current = true
+      prevFocusRef.current = focus
+      const xs = Object.values(coords).map((c) => c[0])
+      const ys = Object.values(coords).map((c) => c[1])
+      map.fitBounds(
+        [
+          [Math.min(...ys), Math.min(...xs)],
+          [Math.max(...ys), Math.max(...xs)],
+        ],
+        { padding: [14, 14] },
+      )
       return
     }
-    const xs = Object.values(coords).map((c) => c[0])
-    const ys = Object.values(coords).map((c) => c[1])
-    map.fitBounds(
-      [
-        [Math.min(...ys), Math.min(...xs)],
-        [Math.max(...ys), Math.max(...xs)],
-      ],
-      { padding: [14, 14] },
-    )
+    // Later focus changes (e.g. user selects another episode) fly the camera.
+    if (focus && focus !== prevFocusRef.current) {
+      prevFocusRef.current = focus
+      const c = coords[focus]
+      if (c) map.flyTo([c[1], c[0]], Math.max(map.getZoom(), 2), { duration: 0.8 })
+    }
   }, [map, focus])
   return null
 }
@@ -132,9 +142,13 @@ export default function LTownMap({
             key={p.id}
             positions={[[a[1], a[0]], [b[1], b[0]]]}
             pathOptions={{
-              color: hl ? '#fb7185' : isLeak ? '#7c2d12' : p.dia >= 400 ? '#334155' : '#1e293b',
+              // Bright enough to read against the #0a1220 background — the old
+              // #1e293b/#334155 skeleton was nearly invisible on dark mode.
+              // Highlight (active leak / validation episode) is amber to match
+              // the "ground-truth leak pipe" legend chips in the UI.
+              color: hl ? '#fbbf24' : isLeak ? '#b45309' : p.dia >= 400 ? '#64748b' : p.dia >= 250 ? '#475569' : '#3b4d63',
               weight: hl ? 3.2 : pipeWeight(p.dia),
-              opacity: hl ? 1 : isLeak ? 0.55 : 0.85,
+              opacity: hl ? 1 : isLeak ? 0.85 : 0.9,
             }}
           >
             <Tooltip className="ltip">
