@@ -26,7 +26,7 @@ npm run dev
 ```
 
 ## Live Deployment
-- **Frontend (Vercel):** [https://hydra-nexus.vercel.app](https://hydra-nexus.vercel.app)
+- **Frontend (Vercel):** [https://hydra-nexus-21a4.vercel.app](https://hydra-nexus-21a4.vercel.app)
 - **Backend (Render):** [https://hydranexus-api.onrender.com](https://hydranexus-api.onrender.com)
 
 ## PRD coverage
