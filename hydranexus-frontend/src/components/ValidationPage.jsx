@@ -72,7 +72,8 @@ export default function ValidationPage() {
         <div>
           <p className="text-sm font-semibold text-slate-200">Replaying the detector over the full BattLeDIM 2018 benchmark…</p>
           <p className="mt-1 max-w-md text-xs text-muted-foreground">
-            The reference model is built server-side on first run (typical 30–60 s), then cached. Every subsequent run is fast.
+            The reference model is built server-side on first run (up to ~3 min on the free tier), then cached. Every
+            subsequent run is fast.
           </p>
         </div>
         <RefreshCw className="h-4 w-4 animate-spin text-cyan-500" />
@@ -98,7 +99,7 @@ export default function ValidationPage() {
   if (!report) return null
 
   const m = report.metrics || {}
-  const events = report.events || {}
+  const events = report.events || []
   const chronic = report.chronic_episodes || []
   const te = m.events || {}
   const tc = m.chronic || {}
