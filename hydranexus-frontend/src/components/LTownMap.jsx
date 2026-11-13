@@ -23,6 +23,13 @@ const { coords, pipes, pipe_map, pump_nodes, reservoirs, tanks, pumps, scada } =
 const PRESSURE_SENSORS = scada.pressure_sensors
 const LEAK_PIPES = new Set(scada.leak_pipes)
 
+// Network extent (model coordinates) — used for the deterministic initial view.
+const ALL_COORDS = Object.values(coords)
+const NETWORK_BOUNDS = [
+  [Math.min(...ALL_COORDS.map((c) => c[1])), Math.min(...ALL_COORDS.map((c) => c[0]))],
+  [Math.max(...ALL_COORDS.map((c) => c[1])), Math.max(...ALL_COORDS.map((c) => c[0]))],
+]
+
 function pipeSeg(id) {
   const ab = pipe_map[id]
   if (!ab || !coords[ab[0]] || !coords[ab[1]]) return null
@@ -107,6 +114,8 @@ export default function LTownMap({
       minZoom={0}
       maxZoom={5}
       zoomSnap={0.25}
+      bounds={NETWORK_BOUNDS}
+      boundsOptions={{ padding: [14, 14] }}
       scrollWheelZoom
     >
       <FitBounds focus={focus} />

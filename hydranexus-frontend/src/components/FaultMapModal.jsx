@@ -110,7 +110,7 @@ export default function FaultMapModal({
         key: `${zoom}-${tx}-${ty}`,
         dx,
         dy,
-        url: `https://a.basemaps.cartocdn.com/dark_all/${zoom}/${tx}/${ty}.png`,
+        url: `https://tile.openstreetmap.org/${zoom}/${tx}/${ty}.png`,
       })
     }
   }
@@ -191,10 +191,13 @@ export default function FaultMapModal({
                     src={t.url}
                     alt=""
                     onError={() => setTileError(true)}
-                    className="absolute h-[256px] w-[256px] opacity-85 pointer-events-none"
+                    className="absolute h-[256px] w-[256px] pointer-events-none"
                     style={{
                       left: `${(t.dx + 1) * 256}px`,
                       top: `${(t.dy + 1) * 256}px`,
+                      // Dark-mode the keyless OSM raster tiles to match the UI
+                      filter: 'invert(1) hue-rotate(185deg) saturate(0.45) brightness(0.92) contrast(1.05)',
+                      opacity: 0.9,
                     }}
                   />
                 ))}
