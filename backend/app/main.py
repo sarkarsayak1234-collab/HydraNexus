@@ -6,7 +6,7 @@ Principle: software-first (simulated telemetry), human-in-the-loop (no autonomou
 from __future__ import annotations
 from typing import Optional
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, Query, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 
 from .schemas import DetectRequest, VerifyRequest, WhatIfRequest, DecisionCompareRequest
@@ -15,6 +15,7 @@ from .topology import graph_payload
 from .ai import analyze, get_model
 from . import db as incident_db
 from . import decision as decision_engine
+from real_data import run_benchmark, analyze_real, model_info as real_model_info
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -362,4 +363,43 @@ def real_data_telemetry(
         return get_real_telemetry(start=start, end=end, points=points, event_pipe=event_pipe).model_dump()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to slice real telemetry: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# Real-data detection + ground-truth validation (the "prove it" layer)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/real-data/evaluate")
+def real_data_evaluate():
+    """Replay the live detector (which never reads ground truth) over every
+    BattLeDIM 2018 leak episode and leak-free control windows, and report
+    precision / recall / F1 / detection latency / false-alarm rate."""
+    try:
+        return run_benchmark()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Benchmark failed: {str(e)}")
+
+
+@app.get("/api/real-data/model/info")
+def real_data_model_info():
+    """Model card for the real-SCADA detector: training data, features,
+    frozen thresholds, and explicit ground-truth usage disclosure."""
+    try:
+        return real_model_info()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Model info failed: {str(e)}")
+
+
+@app.post("/api/real-data/detect")
+def real_data_detect(points: list = Body(..., description="RealTelemetryPoint-style window")):
+    """Run the real-data-native detection pipeline over a BattLeDIM window.
+
+    Ground-truth fields present in the points (leak_rate / active_leaks) are
+    ignored by the detector — this endpoint sees SCADA signals only."""
+    try:
+        return analyze_real(points)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Real detection failed: {str(e)}")
 

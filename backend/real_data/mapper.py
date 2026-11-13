@@ -58,8 +58,11 @@ def map_row_to_telemetry_point(
 
     total_leak_rate = round(total_leak_rate, 2)
 
-    # Anomaly score estimate: high when ground-truth leakage is active
-    anomaly_score = 0.85 if active_leaks else (0.4 if total_inflow > 250 else 0.02)
+    # NOTE: anomalyScore is intentionally NOT set here. The old code fabricated
+    # a score from the ground-truth leakage column itself ("0.88 if active_leaks"),
+    # which is using the answer key as the prediction. Real detection scores are
+    # computed by real_data.detector (SCADA signals only) and attached in
+    # processor.get_real_telemetry.
 
     return RealTelemetryPoint(
         time=timestamp,
@@ -71,7 +74,6 @@ def map_row_to_telemetry_point(
         pressures=press_sensors,
         active_leaks=active_leaks,
         leak_rate=total_leak_rate,
-        anomalyScore=anomaly_score,
     )
 
 
@@ -107,7 +109,7 @@ def map_dataframe_to_telemetry_points(
         active_leaks = [c for c in leak_cols if pd.notna(row[c]) and float(row[c]) > 0.0]
         leak_rate = round(sum(float(row[c]) for c in active_leaks), 2)
 
-        anomaly_score = 0.88 if active_leaks else (0.35 if total_inflow > 240 else 0.02)
+        # anomalyScore intentionally omitted — filled by the real detector in processor.
 
         points.append(
             RealTelemetryPoint(
@@ -120,7 +122,6 @@ def map_dataframe_to_telemetry_points(
                 pressures=pressures,
                 active_leaks=active_leaks,
                 leak_rate=leak_rate,
-                anomalyScore=anomaly_score,
             )
         )
 

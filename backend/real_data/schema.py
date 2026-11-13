@@ -34,9 +34,11 @@ class RealTelemetryPoint(BaseModel):
     pump_flow: float = Field(default=0.0, description="PUMP_1 flow rate in m3/h")
     flows: Dict[str, float] = Field(default_factory=dict, description="Raw sensor flow rates by pipe ID")
     pressures: Dict[str, float] = Field(default_factory=dict, description="Pressure readings by node ID")
-    active_leaks: List[str] = Field(default_factory=list, description="Pipes with active leakage at this timestamp")
-    leak_rate: float = Field(default=0.0, description="Total ground-truth leak rate in m3/h")
-    anomalyScore: float = Field(default=0.0, description="Anomaly score based on deviations")
+    active_leaks: List[str] = Field(default_factory=list, description="Pipes with active leakage at this timestamp (ground-truth overlay)")
+    leak_rate: float = Field(default=0.0, description="Total ground-truth leak rate in m3/h (overlay, not used by detection)")
+    anomalyScore: Optional[float] = Field(default=None, description="Real detector anomaly score (IsolationForest + hour-of-day baseline; ground truth never used)")
+    alarm: bool = Field(default=False, description="Transparent alarm rule fired at this step (inflow up + pressure down vs hour baseline)")
+    reacted_sensor: Optional[str] = Field(default=None, description="Pressure sensor with strongest hour-conditioned drop (localization evidence)")
 
 
 class RealTelemetryResponse(BaseModel):

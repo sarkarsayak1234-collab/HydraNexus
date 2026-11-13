@@ -11,6 +11,7 @@ import pandas as pd
 from .loader import get_flows_df, get_pressures_df, get_leakages_df, get_leakage_events
 from .mapper import map_dataframe_to_telemetry_points
 from .schema import RealTelemetryResponse, LeakageEventSummary
+from .detector import score_frame
 
 
 def get_real_telemetry(
@@ -88,6 +89,23 @@ def get_real_telemetry(
         downsampled = True
 
     telemetry_points = map_dataframe_to_telemetry_points(merged, include_sensor_breakdown=True)
+
+    # ------------------------------------------------------------------
+    # Attach REAL detector scores (SCADA signals only — the ground-truth
+    # leakage columns in `merged` are ignored by score_frame). This replaces
+    # the old fabricated anomaly scores that derived from the answer key.
+    # ------------------------------------------------------------------
+    try:
+        scored = score_frame(merged).reset_index(drop=True)
+        if len(scored) == len(telemetry_points):
+            for i, tp in enumerate(telemetry_points):
+                row = scored.iloc[i]
+                tp.anomalyScore = round(float(row["anomaly_score"]), 3)
+                tp.alarm = bool(row["sustained_alarm"])
+                tp.reacted_sensor = row["reacted_sensor"]
+    except Exception:
+        # Scoring must never break the telemetry endpoint — points stay unscored.
+        pass
 
     return RealTelemetryResponse(
         mode="real",

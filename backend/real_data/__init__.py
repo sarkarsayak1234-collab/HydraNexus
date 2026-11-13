@@ -13,6 +13,8 @@ from .loader import (
     get_leakages_df,
 )
 from .processor import get_real_telemetry
+from .detector import score_frame, analyze_real, model_info, get_reference
+from .evaluate import run_benchmark
 
 __all__ = [
     "RealDataMetadata",
@@ -25,4 +27,9 @@ __all__ = [
     "get_pressures_df",
     "get_leakages_df",
     "get_real_telemetry",
+    "score_frame",
+    "analyze_real",
+    "model_info",
+    "get_reference",
+    "run_benchmark",
 ]
