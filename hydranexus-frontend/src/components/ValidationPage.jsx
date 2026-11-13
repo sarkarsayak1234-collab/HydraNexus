@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { ShieldCheck, RefreshCw, AlertTriangle, CheckCircle2, XCircle, Timer, Crosshair, Database, Scale } from 'lucide-react'
+import { ShieldCheck, RefreshCw, AlertTriangle, CheckCircle2, XCircle, Timer, Crosshair, Database, Scale, Map } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card'
 import { Badge } from './ui/badge'
+import LTownMap from './LTownMap'
 import { fetchRealDataEvaluate, fetchRealDataModelInfo } from '../api'
 
 function MetricTile({ label, value, unit, hint, tone = 'cyan' }) {
@@ -293,6 +294,35 @@ export default function ValidationPage() {
           </Card>
         </div>
       </div>
+
+      {/* Localization map: ground-truth pipe vs localized reacting sensor */}
+      <Card className="border-slate-800/80 bg-[#0c1626]/85 backdrop-blur-sm">
+        <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-sm font-medium text-slate-200">
+              <Map className="h-4 w-4 text-emerald-400" /> Leak localization quality — real L-Town GIS
+            </CardTitle>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              Amber pipes = ground-truth leak locations (answer key). Markers = the sensor the detector localized
+              (argmin pressure z). Green = detected episodes; dashed lines connect each ground-truth pipe to its
+              localized sensor so localization distance is visible.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono">
+            <span className="inline-flex items-center gap-1 rounded border border-amber-500/30 bg-amber-950/40 px-1.5 py-0.5 text-amber-400">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-400" /> ground truth
+            </span>
+            <span className="inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-950/40 px-1.5 py-0.5 text-emerald-400">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> localized sensor
+            </span>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[460px] w-full">
+            <LTownMap episodes={events.filter((e) => e.reacted_sensor)} />
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Method notes */}
       <Card className="border-slate-800/80 bg-[#0c1626]/85 backdrop-blur-sm">

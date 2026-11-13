@@ -164,3 +164,23 @@
 .react-flow__controls-button svg {
   fill: currentColor !important;
 }
+
+/* ---- LTownMap (real BattLeDIM network GIS) ---- */
+.ltown-map {
+  height: 100%;
+  width: 100%;
+  border-radius: 0.75rem;
+}
+.ltown-map .leaflet-tooltip.ltip {
+  background: rgba(10, 18, 32, 0.95);
+  border: 1px solid rgba(51, 65, 85, 0.8);
+  color: #e2e8f0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+}
+.ltown-map .leaflet-tooltip.ltip::before {
+  display: none;
+}

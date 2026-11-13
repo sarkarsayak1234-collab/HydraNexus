@@ -6,6 +6,8 @@ import NetworkMap from './components/NetworkMap'
 import TelemetryCharts from './components/TelemetryCharts'
 import RealTelemetryCharts from './components/RealTelemetryCharts'
 import ValidationPage from './components/ValidationPage'
+import LTownMap from './components/LTownMap'
+import LTownMapModal from './components/LTownMapModal'
 import AmbientNetwork from './components/visual/AmbientNetwork'
 import PageTransition from './components/visual/PageTransition'
 import LandingExperience from './components/landing/LandingExperience'
@@ -418,6 +420,7 @@ function MonitoringPage({ scenario, setScenario, mode: propMode, setMode: propSe
   const [realPoints, setRealPoints] = useState(24)
   const [realResp, setRealResp] = useState(null)
   const [loadingReal, setLoadingReal] = useState(false)
+  const [mapModalOpen, setMapModalOpen] = useState(false)
 
   // Demo telemetry effect
   useEffect(() => {
@@ -667,6 +670,53 @@ function MonitoringPage({ scenario, setScenario, mode: propMode, setMode: propSe
               </div>
 
               <RealTelemetryCharts data={realData} />
+
+              {/* Real L-Town GIS map (official BattLeDIM geometry) */}
+              <Card className="border-slate-800/80 bg-[#0c1626]/85 backdrop-blur-sm">
+                <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
+                  <div>
+                    <CardTitle className="text-sm font-medium text-slate-200">L-Town Network — Live GIS View</CardTitle>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      Real geometry from the official BattLeDIM network file · reacting sensor and active leaks overlaid
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono">
+                    <button
+                      onClick={() => setMapModalOpen(true)}
+                      className="rounded border border-slate-700 bg-slate-900/80 px-2 py-0.5 text-slate-300 hover:border-cyan-600/50 hover:text-cyan-300"
+                    >
+                      Expand
+                    </button>
+                    <span className="inline-flex items-center gap-1 rounded border border-cyan-500/30 bg-cyan-950/40 px-1.5 py-0.5 text-cyan-400">
+                      <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" /> sensor
+                    </span>
+                    <span className="inline-flex items-center gap-1 rounded border border-rose-500/30 bg-rose-950/40 px-1.5 py-0.5 text-rose-400">
+                      <span className="h-1.5 w-1.5 rounded-full bg-rose-400" /> reacting
+                    </span>
+                    <span className="inline-flex items-center gap-1 rounded border border-amber-500/30 bg-amber-950/40 px-1.5 py-0.5 text-amber-400">
+                      <span className="h-1.5 w-1.5 rounded-full bg-amber-400" /> ground-truth leak pipe
+                    </span>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-[420px] w-full">
+                    <LTownMap
+                      reactedSensor={realLast?.reacted_sensor || null}
+                      activeLeaks={realLast?.active_leaks || []}
+                      focus={realLast?.reacted_sensor || null}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+
+              {mapModalOpen && (
+                <LTownMapModal
+                  isOpen={mapModalOpen}
+                  onClose={() => setMapModalOpen(false)}
+                  reactedSensor={realLast?.reacted_sensor || null}
+                  activeLeaks={realLast?.active_leaks || []}
+                />
+              )}
 
               <Card>
                 <CardHeader className="flex-row items-center justify-between space-y-0">
