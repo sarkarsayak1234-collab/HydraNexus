@@ -10,6 +10,46 @@
   </head>
   <body>
     <div id="root"></div>
+    <!--
+      Bootstrap guard: runs before the app bundle. Catches the two crash modes
+      an in-app error boundary cannot see: (1) the bundle script failing to load
+      (e.g. an old cached page pointing at a purged chunk), (2) a top-level
+      error before React mounts. Shows a visible card instead of a blank page.
+    -->
+    <script>
+      (function () {
+        var shown = false
+        function rootHasApp() {
+          var root = document.getElementById('root')
+          return !!(root && root.childElementCount > 0)
+        }
+        function showFatal(title, detail) {
+          if (shown || rootHasApp()) return // React is up — let the in-app boundary handle it
+          shown = true
+          var box = document.createElement('div')
+          box.setAttribute('style', 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0a1220;padding:24px;z-index:99999;font-family:ui-monospace,monospace')
+          box.innerHTML =
+            '<div style="max-width:560px;border:1px solid #7f1d3a;background:#0c1626;border-radius:16px;padding:24px;color:#e2e8f0">' +
+            '<div style="font-weight:700;font-size:15px;color:#fff">' + title + '</div>' +
+            '<div style="margin-top:12px;font-size:12px;line-height:1.6;color:#fda4af;word-break:break-word">' + detail + '</div>' +
+            '<div style="margin-top:16px;display:flex;gap:8px">' +
+            '<button onclick="location.reload(true)" style="background:#0284c7;border:0;border-radius:8px;padding:8px 16px;color:#fff;font-size:12px;font-family:inherit;cursor:pointer">Hard refresh</button>' +
+            '</div></div>'
+          document.body.appendChild(box)
+        }
+        window.addEventListener('error', function (e) {
+          var t = e.target
+          if (t && (t.tagName === 'SCRIPT' || t.tagName === 'LINK')) {
+            showFatal('Application bundle failed to load', 'This page was loaded from a previous version and its assets are gone. A hard refresh (Ctrl+Shift+R) fixes it.')
+            return
+          }
+          if (e.message && !rootHasApp()) showFatal('Startup error before the UI mounted', e.message)
+        }, true)
+        setTimeout(function () {
+          if (!rootHasApp()) showFatal('The dashboard did not start', 'No UI appeared after loading. A hard refresh (Ctrl+Shift+R) usually fixes this; if it persists, report the browser console output.')
+        }, 8000)
+      })()
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
