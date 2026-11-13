@@ -16,6 +16,7 @@ from .ai import analyze, get_model
 from . import db as incident_db
 from . import decision as decision_engine
 from real_data import run_benchmark, analyze_real, model_info as real_model_info
+from real_data.investigate import investigate_real, impact_real
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -402,4 +403,30 @@ def real_data_detect(points: list = Body(..., description="RealTelemetryPoint-st
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Real detection failed: {str(e)}")
+
+
+@app.post("/api/real-data/investigate")
+def real_data_investigate(points: list = Body(..., description="RealTelemetryPoint-style window")):
+    """Root-cause investigation over a real-SCADA window: per-sensor pressure-z
+    ranking, inflow decomposition per meter, hour-of-day context, alarm
+    timeline and supply-branch attribution. SCADA signals only."""
+    try:
+        return investigate_real(points)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Real investigation failed: {str(e)}")
+
+
+@app.post("/api/real-data/impact")
+def real_data_impact(points: list = Body(..., description="RealTelemetryPoint-style window")):
+    """Decision-support impact estimate over a real-SCADA window: excess-inflow
+    loss rate, cumulative volume, affected supply branch and nearest-pipe
+    localization. Ground truth is returned only as a labelled overlay."""
+    try:
+        return impact_real(points)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Real impact failed: {str(e)}")
 

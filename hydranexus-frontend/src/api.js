@@ -176,3 +176,23 @@ export async function postRealDataDetect(points) {
   return j
 }
 
+// R1 — root-cause investigation over a real-SCADA window (SCADA signals only)
+export async function postRealDataInvestigate(points) {
+  const j = await fetchJson(
+    '/api/real-data/investigate',
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(points) },
+    60000,
+  )
+  return j
+}
+
+// R2 — decision-support impact estimate over a real-SCADA window
+export async function postRealDataImpact(points) {
+  const j = await fetchJson(
+    '/api/real-data/impact',
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(points) },
+    60000,
+  )
+  return j
+}
+

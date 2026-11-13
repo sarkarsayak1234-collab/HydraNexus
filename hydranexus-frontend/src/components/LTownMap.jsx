@@ -88,9 +88,11 @@ export default function LTownMap({
   episodes = [],
   focus = null,
   showAllSensors = true,
+  sensors = [],
   className = '',
 }) {
   const activeLeakSet = useMemo(() => new Set(activeLeaks), [activeLeaks])
+  const sensorSet = useMemo(() => new Set(sensors), [sensors])
   const episodeMap = useMemo(() => {
     const m = {}
     for (const e of episodes) if (e.reacted_sensor) m[e.pipe] = e
@@ -241,23 +243,25 @@ export default function LTownMap({
           const c = coords[id]
           if (!c) return null
           const isReacted = id === reactedSensor
+          const isSag = sensorSet.has(id)
           const inEpisode = episodes.some((e) => e.reacted_sensor === id)
           return (
             <CircleMarker
               key={id}
               center={[c[1], c[0]]}
-              radius={isReacted ? 6 : 3}
+              radius={isReacted ? 6 : isSag ? 5 : 3}
               pathOptions={{
-                color: isReacted ? '#f43f5e' : inEpisode ? '#34d399' : '#22d3ee',
-                fillColor: isReacted ? '#f43f5e' : inEpisode ? '#34d399' : '#0891b2',
-                fillOpacity: isReacted ? 1 : 0.75,
-                weight: isReacted ? 2 : 1,
+                color: isReacted ? '#f43f5e' : isSag ? '#fbbf24' : inEpisode ? '#34d399' : '#22d3ee',
+                fillColor: isReacted ? '#f43f5e' : isSag ? '#fbbf24' : inEpisode ? '#34d399' : '#0891b2',
+                fillOpacity: isReacted || isSag ? 1 : 0.75,
+                weight: isReacted ? 2 : isSag ? 1.5 : 1,
               }}
             >
               <Tooltip className="ltip">
                 <span className="font-semibold text-slate-100">{id}</span>{' '}
                 <span className="text-slate-400">pressure sensor</span>
                 {isReacted && <span className="text-rose-400"> · REACTING (argmin z)</span>}
+                {isSag && !isReacted && <span className="text-amber-400"> · SAGGING (below baseline)</span>}
               </Tooltip>
             </CircleMarker>
           )
