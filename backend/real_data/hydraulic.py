@@ -79,10 +79,20 @@ def _fresh_model(hours: int, phase_hours: float):
     return wn
 
 
-def _run(wn) -> Tuple[Any, Any]:
+def _run(wn, keep_flows: bool = True, keep_press: bool = True) -> Tuple[Any, Any]:
+    """Run EPANET and return ONLY copied (flowrate, pressure) frames.
+
+    wntr's results object holds every attribute matrix (~100-200 MB for
+    multi-day runs); copying just what the caller needs and dropping the rest
+    keeps the Render free-tier instance (512 MB) alive."""
+    import gc
     import wntr
     res = wntr.sim.EpanetSimulator(wn).run_sim()
-    return res.link["flowrate"], res.node["pressure"]
+    f = res.link["flowrate"].copy() if keep_flows else None
+    p = res.node["pressure"].copy() if keep_press else None
+    del res
+    gc.collect()
+    return f, p
 
 
 def _snapshot(flow: Any, press: Any) -> Dict[str, Any]:
@@ -397,7 +407,7 @@ def localize_hybrid(
 
     # --- healthy twin simulation over the whole span ------------------------
     wn = _fresh_model(total_hours, phase)
-    flow, press = _run(wn)
+    _, press = _run(wn, keep_flows=False)
     sim_cols = [c for c in sig_sensors if c in press.columns]
     n = min(len(meas), len(press))
     idx_in_win = [i for i, t in enumerate(meas_ts) if t >= w_start]

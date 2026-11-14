@@ -455,7 +455,7 @@ def hydraulic_localize(
     start: Optional[str] = Query(default=None, description="Explicit window start"),
     end: Optional[str] = Query(default=None, description="Explicit window end"),
     std_leak_lph: float = Query(default=15000.0, gt=0, description="Standard test-leak size for fingerprints (L/hr)"),
-    n_candidates: int = Query(default=12, ge=4, le=30, description="Max candidate pipes to fingerprint"),
+    n_candidates: int = Query(default=8, ge=4, le=30, description="Max candidate pipes to fingerprint (kept small: each adds a full hydraulic sim)"),
     points: int = Query(default=48, ge=12, le=145, description="Window sampling points"),
 ):
     """Option A hybrid localization: SCADA pressure residuals vs simulated leak
