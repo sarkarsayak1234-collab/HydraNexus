@@ -407,8 +407,22 @@ def localize_hybrid(
 
     # --- healthy twin simulation over the whole span ------------------------
     wn = _fresh_model(total_hours, phase)
+    # 15-min reports: wntr accumulates every report row of every attribute for
+    # the whole run (~200 MB at 5-min over 8 days) -> OOM on Render's 512 MB
+    # free tier. 15-min resolution is ample for the daily-cycle calibration.
+    wn.options.time.report_timestep = 900
     _, press = _run(wn, keep_flows=False)
     sim_cols = [c for c in sig_sensors if c in press.columns]
+    # align measured rows to the sim's 15-min report grid (SCADA rows are
+    # 5-min aligned, so every 3rd row lands exactly on a 15-min mark)
+    t0dt = pd.to_datetime(cal_start)
+    keep_m = []
+    for i, t in enumerate(meas_ts):
+        sec = (pd.to_datetime(t) - t0dt).total_seconds()
+        if sec % 900 == 0 and sec / 900 < len(press):
+            keep_m.append(i)
+    meas = meas.iloc[keep_m].reset_index(drop=True)
+    meas_ts = meas["Timestamp"].tolist()
     n = min(len(meas), len(press))
     idx_in_win = [i for i, t in enumerate(meas_ts) if t >= w_start]
     win_start_row = idx_in_win[0] if idx_in_win else max(0, len(meas_ts) - n_pts)
@@ -437,11 +451,11 @@ def localize_hybrid(
         merged_w = pd.concat([fsub.drop(columns=["Timestamp"]), psub.drop(columns=["Timestamp"])], axis=1)
         merged_w.insert(0, "Timestamp", fsub["Timestamp"].values)
         sc = score_frame(merged_w).reset_index(drop=True)
-        off = win_start_row
+        ts_row = {t: i for i, t in enumerate(meas_ts)}
         alarm_idx = [
-            off + i
-            for i in range(min(len(sc), len(meas_ts) - off))
-            if bool(sc["sustained_alarm"].iloc[i])
+            ts_row[str(fsub["Timestamp"].iloc[i])]
+            for i in range(len(sc))
+            if bool(sc["sustained_alarm"].iloc[i]) and str(fsub["Timestamp"].iloc[i]) in ts_row
         ]
     except Exception:
         alarm_idx = []
@@ -503,6 +517,7 @@ def localize_hybrid(
         pipe_id = cand["pipe"]
         try:
             m = _fresh_model(24, phase)
+            m.options.time.report_timestep = 3600  # only the final step is used
             m = _wntr.morph.split_pipe(
                 m, pipe_id, f"{pipe_id}__s2", "leak_j",
                 add_pipe_at_end=True, split_at_point=0.5,
