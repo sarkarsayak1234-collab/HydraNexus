@@ -76,8 +76,12 @@ Detection never reads `2018_Leakages.csv`; evaluation and UI overlays do, and ar
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/real-data/telemetry` | Windowed/downsampled real SCADA with real detector scores attached |
-| `POST /api/real-data/detect` | Full Detect → Investigate → Assess pipeline over a real window |
+| `POST /api/real-data/detect` | Full Detect → Investigate → Assess pipeline over a real window (+ evidence-strength verification, per-step window detail) |
 | `GET /api/real-data/evaluate` | The ground-truth benchmark report (metrics, per-episode detail, controls) |
+| `GET /api/real-data/replay` | One-shot Live Replay payload: native 5-min window scored with the benchmark's causal baseline |
+| `POST /api/real-data/investigate` | Root-cause view: sensor-z ranking, meter decomposition, hour context, supply-branch attribution |
+| `POST /api/real-data/impact` | Impact estimate: excess-inflow loss rate/volume, affected branch, labelled answer-key overlay |
+| `GET /api/real-data/respond` | Response planner: isolate / throttle / monitor / dispatch with SCADA-derived savings and stated assumptions (decision support — not a simulation) |
 | `GET /api/real-data/model/info` | Detector model card: training data, frozen thresholds, provenance disclosure |
 | `GET /api/real-data/metadata` · `/leakages` | Dataset metadata and labelled ground-truth episodes |
 
@@ -88,7 +92,8 @@ Detection never reads `2018_Leakages.csv`; evaluation and UI overlays do, and ar
   `VITE_API_URL` is reachable (`src/api.js`).
 - `backend/` — FastAPI + Pandas/NumPy + Scikit-learn (IsolationForest) + NetworkX.
 - `backend/real_data/` — real-SCADA loader, mapper, **detector** (ground-truth-free), **evaluate** (honest
-  benchmark), processor, schema.
+  benchmark), **investigate / impact / respond / replay** (real-mode decision layers), **network** (L-Town supply-branch
+  graph), processor, schema.
 - `backend/data/real/` — BattLeDIM 2018 SCADA + ground truth CSVs.
 
 ## Live Deployment

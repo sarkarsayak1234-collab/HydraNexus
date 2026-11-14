@@ -425,6 +425,26 @@ def real_data_replay(
         raise HTTPException(status_code=500, detail=f"Replay build failed: {str(e)}")
 
 
+@app.get("/api/real-data/respond")
+def real_data_respond(
+    event_pipe: Optional[str] = Query(default=None, description="Pipe ID to focus the planning window on"),
+    points: int = Query(default=48, ge=12, le=145, description="Max native 5-min steps in the planning window"),
+    start: Optional[str] = Query(default=None, description="Explicit window start (overrides event_pipe centering)"),
+    end: Optional[str] = Query(default=None, description="Explicit window end"),
+):
+    """R3a response planner over a real-SCADA window: isolate / throttle /
+    monitor / dispatch options with SCADA-derived savings, stated assumptions
+    and a recommendation. Uses the same CAUSAL 14-day baseline as the benchmark.
+    Decision support — not a hydraulic simulation."""
+    try:
+        from real_data.respond import respond_window
+        return respond_window(event_pipe=event_pipe, points=points, start=start, end=end)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Real response planning failed: {str(e)}")
+
+
 @app.post("/api/real-data/investigate")
 def real_data_investigate(points: list = Body(..., description="RealTelemetryPoint-style window")):
     """Root-cause investigation over a real-SCADA window: per-sensor pressure-z

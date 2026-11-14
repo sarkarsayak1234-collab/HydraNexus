@@ -196,6 +196,21 @@ export async function postRealDataImpact(points) {
   return j
 }
 
+// R3a — response planner (isolate / throttle / monitor / dispatch) over a
+// real-SCADA window. Honest decision support — not a hydraulic simulation.
+// The backend slices the window itself and scores it with the benchmark's
+// causal 14-day baseline (cold start builds the merged frame once).
+export async function fetchRealDataRespond({ event_pipe, points = 48, start, end } = {}) {
+  const params = new URLSearchParams()
+  if (event_pipe) params.append('event_pipe', event_pipe)
+  if (points) params.append('points', String(points))
+  if (start) params.append('start', start)
+  if (end) params.append('end', end)
+  const q = params.toString() ? `?${params.toString()}` : ''
+  const j = await fetchJson(`/api/real-data/respond${q}`, {}, 180000)
+  return j
+}
+
 // R4 — one-shot Live Replay payload (accelerated-time episode player).
 // Cold start builds the merged SCADA frame once (~105k rows), so allow a long timeout.
 export async function fetchRealDataReplay(eventPipe, force = false) {

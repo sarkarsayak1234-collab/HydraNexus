@@ -42,7 +42,7 @@ function LossTile({ label, value, unit, hint, tone = 'slate' }) {
   )
 }
 
-export default function RealImpactPage() {
+export default function RealImpactPage({ onPlan }) {
   const [events, setEvents] = useState([])
   const [pipe, setPipe] = useState('p232')
   const [points, setPoints] = useState(24)
@@ -118,9 +118,20 @@ export default function RealImpactPage() {
             <option value={96}>96 pts</option>
           </select>
         </div>
-        <Badge className="gap-1 border-emerald-700/60 bg-emerald-950/50 text-emerald-400 hover:bg-emerald-950/50">
-          <Droplets className="h-3 w-3" /> BATTLEDIM 2018 REAL · SCADA-only estimate
-        </Badge>
+        <div className="flex flex-wrap items-center gap-2">
+          {onPlan && (
+            <button
+              onClick={onPlan}
+              className="inline-flex items-center gap-1 rounded-lg border border-cyan-600/50 bg-cyan-950/40 px-2.5 py-1.5 text-[11px] font-mono font-semibold text-cyan-300 hover:bg-cyan-900/40"
+              title="Open the response planner for this situation"
+            >
+              ⚒ Plan the response →
+            </button>
+          )}
+          <Badge className="gap-1 border-emerald-700/60 bg-emerald-950/50 text-emerald-400 hover:bg-emerald-950/50">
+            <Droplets className="h-3 w-3" /> BATTLEDIM 2018 REAL · SCADA-only estimate
+          </Badge>
+        </div>
       </div>
 
       {error && (

@@ -7,6 +7,7 @@ import TelemetryCharts from './components/TelemetryCharts'
 import RealTelemetryCharts from './components/RealTelemetryCharts'
 import RealInvestigationPage from './components/RealInvestigationPage'
 import RealImpactPage from './components/RealImpactPage'
+import RealWhatIfPage from './components/RealWhatIfPage'
 import RealReplay from './components/RealReplay'
 import ValidationPage from './components/ValidationPage'
 import LTownMap from './components/LTownMap'
@@ -2679,6 +2680,7 @@ ${simRows ? `<h2>6. Observed vs simulated flow</h2><table><tr><th>Time</th><th>O
   const realMetaByPage = {
     incident: ['Investigation — Real SCADA', 'Root-cause analysis over BattLeDIM 2018 SCADA signals · sensor ranking, inflow decomposition, branch attribution'],
     impact: ['Impact — Real SCADA', 'Estimated water loss and affected supply branch from BattLeDIM 2018 telemetry · answer key shown as labelled overlay only'],
+    whatif: ['Response Planner — Real SCADA', 'Honest intervention options (isolate / throttle / monitor / dispatch) with SCADA-derived savings and stated assumptions · no simulated outcomes'],
   }
   const meta =
     dataSourceMode === 'real' && realMetaByPage[page]
@@ -2735,8 +2737,13 @@ ${simRows ? `<h2>6. Observed vs simulated flow</h2><table><tr><th>Time</th><th>O
         />
       )
     if (page === 'impact')
-      return dataSourceMode === 'real' ? <RealImpactPage /> : <ImpactPage active={active} data={data} scenario={scenario} />
-    if (page === 'whatif') return <WhatIfPage active={active} data={data} scenario={scenario} />
+      return dataSourceMode === 'real' ? (
+        <RealImpactPage onPlan={() => setPage('whatif')} />
+      ) : (
+        <ImpactPage active={active} data={data} scenario={scenario} />
+      )
+    if (page === 'whatif')
+      return dataSourceMode === 'real' ? <RealWhatIfPage /> : <WhatIfPage active={active} data={data} scenario={scenario} />
     if (page === 'history') return <HistoryPage setPage={setPage} />
     if (page === 'privacy') return <PrivacyPage />
     if (page === 'terms') return <TermsPage />
