@@ -259,3 +259,40 @@ export async function fetchHydraulicLocalize({ event_pipe, start, end, std_leak_
   return j
 }
 
+// Field alerts (demo mode): trigger → alert → dispatch → SMS → tap-to-resolve
+export async function fetchFieldAlerts() {
+  const j = await fetchJson('/api/alerts', {}, 10000)
+  return j // { alerts: [...], workers: [...] }
+}
+
+export async function createAlert(payload) {
+  const j = await fetchJson('/api/alerts', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+  }, 10000)
+  return j
+}
+
+export async function dispatchAlert(alertId, workerId) {
+  const j = await fetchJson(`/api/alerts/${alertId}/dispatch`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ worker_id: workerId }),
+  }, 20000)
+  return j
+}
+
+export async function resolveAlert(alertId) {
+  const j = await fetchJson(`/api/alerts/${alertId}/resolve`, { method: 'POST' }, 10000)
+  return j
+}
+
+export async function fetchWorkers() {
+  const j = await fetchJson('/api/workers', {}, 10000)
+  return j.workers || []
+}
+
+export async function addWorker(payload) {
+  const j = await fetchJson('/api/workers', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+  }, 10000)
+  return j
+}
+

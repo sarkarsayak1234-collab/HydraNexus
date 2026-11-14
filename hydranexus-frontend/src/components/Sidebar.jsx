@@ -1,5 +1,6 @@
 import {
   LayoutDashboard,
+  BellRing,
   Network,
   Activity,
   FileSearch,
@@ -17,6 +18,7 @@ import { cn } from '../lib/utils'
 import { Badge } from './ui/badge'
 
 const items = [
+  ['alerts', BellRing, 'Field Alerts'],
   ['overview', LayoutDashboard, 'Overview'],
   ['network', Network, 'Network'],
   ['monitoring', Activity, 'Telemetry'],

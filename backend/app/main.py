@@ -91,6 +91,90 @@ def create_incident(item: dict):
     return {"saved": True, "id": item.get("id")}
 
 
+# ---------------------------------------------------------------------------
+# Field alerts (demo mode): trigger -> alert -> dispatch -> SMS -> tap-to-resolve
+# ---------------------------------------------------------------------------
+
+@app.get("/api/alerts")
+def alerts_list():
+    try:
+        from app import alerts as al
+        return {"alerts": al.list_alerts(), "workers": al.list_workers()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Alert list failed: {str(e)}")
+
+
+@app.post("/api/alerts")
+def alert_create(item: dict = Body(default={})):
+    try:
+        from app import alerts as al
+        return al.create_alert(item)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Alert create failed: {str(e)}")
+
+
+@app.post("/api/alerts/{alert_id}/dispatch")
+def alert_dispatch(alert_id: str, body: dict = Body(...)):
+    try:
+        from app import alerts as al
+        return al.dispatch_alert(alert_id, str(body.get("worker_id") or ""))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Alert dispatch failed: {str(e)}")
+
+
+@app.post("/api/alerts/{alert_id}/resolve")
+def alert_resolve(alert_id: str):
+    try:
+        from app import alerts as al
+        return al.resolve_alert(alert_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/alerts/{alert_id}/ack")
+def alert_ack(alert_id: str, t: str = Query(default="")):
+    """The field worker taps the SMS link here (any browser, no login)."""
+    from fastapi.responses import HTMLResponse
+    from app import alerts as al
+    try:
+        alert = al.ack_alert(alert_id, t)
+        html = f"""<!doctype html><html><head><meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>HydraNexus — resolved</title>
+<style>body{{font-family:system-ui;background:#0a1220;color:#e2e8f0;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0}}
+.card{{max-width:420px;padding:32px;border:1px solid #14532d;border-radius:16px;background:#052e16;text-align:center}}
+h1{{font-size:42px;margin:0}} p{{color:#86efac}} small{{color:#64748b}}</style></head>
+<body><div class='card'><h1>✅</h1><h2>Alert resolved</h2>
+<p>{alert.get('type')} at {alert.get('location')} marked resolved by you at {alert.get('resolved_at')}.</p>
+<p>The control room has been notified automatically.</p>
+<small>HydraNexus · human-in-the-loop decision support</small></div></body></html>"""
+        return HTMLResponse(html)
+    except PermissionError:
+        return HTMLResponse("<!doctype html><body style='font-family:system-ui;background:#1a0505;color:#fca5a5;display:flex;min-height:100vh;align-items:center;justify-content:center'><div><h1>⛔ Invalid link</h1><p>This acknowledgement link is not valid for this alert.</p></div></body>", status_code=403)
+    except ValueError as e:
+        return HTMLResponse(f"<!doctype html><body style='font-family:system-ui;background:#1a0505;color:#fca5a5;display:flex;min-height:100vh;align-items:center;justify-content:center'><div><h1>⚠️ Not found</h1><p>{str(e)}</p></div></body>", status_code=404)
+
+
+@app.get("/api/workers")
+def workers_list():
+    try:
+        from app import alerts as al
+        return {"workers": al.list_workers()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Worker list failed: {str(e)}")
+
+
+@app.post("/api/workers")
+def worker_add(item: dict = Body(...)):
+    try:
+        from app import alerts as al
+        return al.add_worker(item)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Worker add failed: {str(e)}")
+
+
 @app.post("/api/ai/detect")
 def ai_detect(body: DetectRequest):
     try:

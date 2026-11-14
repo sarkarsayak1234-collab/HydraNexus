@@ -8,6 +8,7 @@ import RealTelemetryCharts from './components/RealTelemetryCharts'
 import RealInvestigationPage from './components/RealInvestigationPage'
 import RealImpactPage from './components/RealImpactPage'
 import RealWhatIfPage from './components/RealWhatIfPage'
+import FieldAlerts from './components/FieldAlerts'
 import RealReplay from './components/RealReplay'
 import ValidationPage from './components/ValidationPage'
 import LTownMap from './components/LTownMap'
@@ -49,6 +50,9 @@ import {
   fetchRealDataEvaluate,
   postRealDataDetect,
   createIncident,
+  createAlert,
+  fetchAlerts,
+  resolveAlert,
 } from './api'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
@@ -2522,6 +2526,31 @@ export default function App() {
     }
     const t = toastMap[s] || { message: `Scenario switched to ${s}.`, type: 'info' }
     setToast(t)
+
+    // Field-alert workflow (demo mode): every non-baseline scenario raises an
+    // alert; returning to baseline closes outstanding alerts automatically.
+    if (dataSourceMode === 'demo') {
+      if (s !== 'normal') {
+        const alertSpec = {
+          leak: { title: 'Leak detected on B2 → B3', type: 'Leak', location: 'B2 → B3', zone: 'Zone B', severity: 'MEDIUM', lossPerHour: 3500, details: ['Flow +40% vs baseline', 'Pressure −12% vs baseline', 'Metered consumption stable — loss is physical'] },
+          burst: { title: 'Burst detected on B2 → B3', type: 'Burst', location: 'B2 → B3', zone: 'Zone B', severity: 'HIGH', lossPerHour: 7300, details: ['Flow +91% vs baseline', 'Pressure −42% vs baseline', 'Tank level falling — upstream loss'] },
+          demand: { title: 'Demand surge in Zone C', type: 'Demand spike', location: 'N1 → Zone C', zone: 'Zone C', severity: 'LOW', lossPerHour: 0, details: ['Consumption +38% — seasonal demand', 'No physical loss signature'] },
+          sensor: { title: 'Suspected sensor fault on N1 → B2', type: 'Sensor fault', location: 'N1 → B2', zone: 'Zone B', severity: 'LOW', lossPerHour: 0, details: ['Pressure transmitter disagreement', 'Healthy wall — check the sensor, not the pipe'] },
+          corrosion: { title: 'Corrosion watch on B2 → B3', type: 'Corrosion', location: 'B2 → B3', zone: 'Zone B', severity: 'LOW', lossPerHour: 0, details: ['Eddy-current variance rising', 'No water loss yet — schedule inspection'] },
+        }[s]
+        if (alertSpec) {
+          createAlert({ ...alertSpec }).catch(() => {})
+        }
+      } else {
+        fetchFieldAlerts()
+          .then((j) => {
+            for (const a of j.alerts || []) {
+              if (a.status === 'ACTIVE' || a.status === 'DISPATCHED') resolveAlert(a.id).catch(() => {})
+            }
+          })
+          .catch(() => {})
+      }
+    }
   }
 
   const trigger = () => {
@@ -2681,6 +2710,7 @@ ${simRows ? `<h2>6. Observed vs simulated flow</h2><table><tr><th>Time</th><th>O
     incident: ['Investigation — Real SCADA', 'Root-cause analysis over BattLeDIM 2018 SCADA signals · sensor ranking, inflow decomposition, branch attribution'],
     impact: ['Impact — Real SCADA', 'Estimated water loss and affected supply branch from BattLeDIM 2018 telemetry · answer key shown as labelled overlay only'],
     whatif: ['Response Planner — Real SCADA', 'Honest intervention options (isolate / throttle / monitor / dispatch) with SCADA-derived savings and stated assumptions · no simulated outcomes'],
+    alerts: ['Field Alerts', 'Live incident alerts · dispatch nearby field crew · SMS acknowledgment closes the alert automatically'],
   }
   const meta =
     dataSourceMode === 'real' && realMetaByPage[page]
@@ -2744,6 +2774,7 @@ ${simRows ? `<h2>6. Observed vs simulated flow</h2><table><tr><th>Time</th><th>O
       )
     if (page === 'whatif')
       return dataSourceMode === 'real' ? <RealWhatIfPage /> : <WhatIfPage active={active} data={data} scenario={scenario} />
+    if (page === 'alerts') return <FieldAlerts notify={(message, type = 'info') => setToast({ message, type })} />
     if (page === 'history') return <HistoryPage setPage={setPage} />
     if (page === 'privacy') return <PrivacyPage />
     if (page === 'terms') return <TermsPage />
