@@ -41,7 +41,9 @@ app.add_middleware(
 )
 
 
-@app.get("/api/health")
+# HEAD/POST allowed: uptime checkers (e.g. UptimeRobot) may probe with any
+# method; a GET-only route 405-rejects HEAD and the keep-alive monitor dies.
+@app.api_route("/api/health", methods=["GET", "HEAD", "POST"])
 def health():
     return {"status": "ok", "service": "hydranexus-api", "version": "0.1.0", "mode": "simulated",
             "db": "supabase" if incident_db.is_configured() else "mock"}
