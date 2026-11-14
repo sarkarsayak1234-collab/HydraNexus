@@ -7,6 +7,7 @@ import TelemetryCharts from './components/TelemetryCharts'
 import RealTelemetryCharts from './components/RealTelemetryCharts'
 import RealInvestigationPage from './components/RealInvestigationPage'
 import RealImpactPage from './components/RealImpactPage'
+import RealReplay from './components/RealReplay'
 import ValidationPage from './components/ValidationPage'
 import LTownMap from './components/LTownMap'
 import LTownMapModal from './components/LTownMapModal'
@@ -46,6 +47,7 @@ import {
   fetchRealDataTelemetry,
   fetchRealDataEvaluate,
   postRealDataDetect,
+  createIncident,
 } from './api'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
@@ -414,7 +416,7 @@ const SCENARIOS = [
 // load at most and shared across page navigations.
 let realEvalCache = null
 
-function MonitoringPage({ scenario, setScenario, mode: propMode, setMode: propSetMode }) {
+function MonitoringPage({ scenario, setScenario, mode: propMode, setMode: propSetMode, notify }) {
   const [internalMode, setInternalMode] = useState(propMode || 'demo')
   const mode = propMode !== undefined ? propMode : internalMode
   const setMode = propSetMode || setInternalMode
@@ -434,6 +436,7 @@ function MonitoringPage({ scenario, setScenario, mode: propMode, setMode: propSe
   // over the currently viewed window (drives the alarm overlay + verdict card).
   const [realReport, setRealReport] = useState(null)
   const [realDetect, setRealDetect] = useState(null)
+  const [replayOpen, setReplayOpen] = useState(false)
 
   // Demo telemetry effect
   useEffect(() => {
@@ -587,6 +590,21 @@ function MonitoringPage({ scenario, setScenario, mode: propMode, setMode: propSe
             </span>
             <span className="hidden sm:inline text-slate-600">•</span>
             <span className="hidden sm:inline text-slate-400">3 Inflow Meters · 33 Pressure Sensors</span>
+            {realDetect?.alarm_active && (
+              <span className="inline-flex items-center gap-1 rounded border border-rose-500/50 bg-rose-950/60 px-2 py-0.5 font-semibold text-rose-300">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-rose-400" /> LIVE ALARM
+              </span>
+            )}
+            <button
+              onClick={() => setReplayOpen((v) => !v)}
+              className={`inline-flex items-center gap-1 rounded px-2 py-0.5 font-semibold transition-colors ${
+                replayOpen
+                  ? 'border border-rose-500/50 bg-rose-950/60 text-rose-300'
+                  : 'border border-slate-700 bg-slate-900/80 text-slate-300 hover:border-rose-500/50 hover:text-rose-300'
+              }`}
+            >
+              ▶ Live Replay
+            </button>
           </div>
         )}
       </div>
@@ -779,6 +797,23 @@ function MonitoringPage({ scenario, setScenario, mode: propMode, setMode: propSe
                             {realDetect.primaryHypothesis} · {realDetect.severity}
                           </span>
                         </div>
+                        {realDetect.verification && (
+                          <div>
+                            <div className="flex items-center justify-between font-mono text-[10px]">
+                              <span className="text-slate-500">evidence strength</span>
+                              <span className={realDetect.verification.strength >= 70 ? 'text-emerald-400' : realDetect.verification.strength >= 40 ? 'text-amber-400' : 'text-slate-400'}>
+                                {realDetect.verification.strength}/100
+                              </span>
+                            </div>
+                            <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+                              <div
+                                className={`h-full rounded-full ${realDetect.verification.strength >= 70 ? 'bg-emerald-500' : realDetect.verification.strength >= 40 ? 'bg-amber-500' : 'bg-slate-600'}`}
+                                style={{ width: `${realDetect.verification.strength}%` }}
+                              />
+                            </div>
+                            <p className="mt-1 text-[10px] text-slate-500">{realDetect.verification.verdict}</p>
+                          </div>
+                        )}
                         <ul className="space-y-1 font-mono text-[10.5px] leading-relaxed text-slate-400">
                           {(realDetect.evidence || []).slice(0, 4).map((line, i) => (
                             <li key={i} className="flex gap-1.5"><span className="text-slate-600">▸</span><span>{line}</span></li>
@@ -788,6 +823,31 @@ function MonitoringPage({ scenario, setScenario, mode: propMode, setMode: propSe
                           Localized at <span className="text-rose-400">{realDetect.location?.reacted_sensor || '—'}</span>
                           {realDetect.location?.z_press != null && ` (pressure z ${realDetect.location.z_press})`} · unexplained inflow +{Math.round(realDetect.impact?.excessInflowPerHour || 0).toLocaleString()} L/h
                         </p>
+                        {realDetect.alarm_active && notify && (
+                          <button
+                            onClick={() => {
+                              const item = {
+                                id: `INC-${new Date().toISOString().replace(/\D/g, '').slice(2, 14)}`,
+                                title: `Real SCADA alarm — ${realDetect.location?.reacted_sensor || 'sensor'} reacting`,
+                                type: `Leak (BattLeDIM 2018)`,
+                                location: realDetect.location?.reacted_sensor || '—',
+                                zone: 'BattLeDIM 2018 real data',
+                                severity: realDetect.severity === 'NORMAL' ? 'LOW' : realDetect.severity,
+                                status: 'Investigating',
+                                confidence: realDetect.confidence,
+                                lossPerHour: realDetect.impact?.excessInflowPerHour || 0,
+                                started: realLast?.time || '',
+                                evidence: (realDetect.evidence || []).slice(0, 4),
+                              }
+                              createIncident(item)
+                                .then(() => notify('Incident saved to the incident store (Supabase).', 'success'))
+                                .catch(() => notify('Incident store unavailable (needs Supabase env on the backend).', 'danger'))
+                            }}
+                            className="inline-flex items-center gap-1 rounded border border-rose-500/40 bg-rose-950/50 px-2 py-1 font-mono text-[10px] font-semibold text-rose-300 hover:bg-rose-900/60"
+                          >
+                            ⚑ Create incident from this alarm
+                          </button>
+                        )}
                       </>
                     )}
                   </div>
@@ -838,6 +898,8 @@ function MonitoringPage({ scenario, setScenario, mode: propMode, setMode: propSe
                   </div>
                 </CardContent>
               </Card>
+
+              {replayOpen && <RealReplay notify={notify} />}
 
               <RealTelemetryCharts data={realData} alarms={alarmTimes} steps={realDetect?.window_steps || []} />
 
@@ -901,12 +963,48 @@ function MonitoringPage({ scenario, setScenario, mode: propMode, setMode: propSe
                       Showing {realData.length} records · {realResp?.start} to {realResp?.end}
                     </CardDescription>
                   </div>
-                  <Input
-                    placeholder="Filter by time, flow…"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    className="max-w-[180px] text-xs font-mono"
-                  />
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        const head = 'timestamp,inflow_m3h,avg_head_m,p227,p235,pump_1,leak_rate_m3h,active_leaks,anomaly_score,alarm\n'
+                        const rows = realFiltered
+                          .map((r) =>
+                            [
+                              r.time,
+                              r.flow?.toFixed(2),
+                              r.pressure?.toFixed(2),
+                              r.flows?.p227?.toFixed(2),
+                              r.flows?.p235?.toFixed(2),
+                              (r.flows?.PUMP_1 ?? r.pump_flow ?? 0).toFixed(2),
+                              (r.leak_rate ?? 0).toFixed(2),
+                              (r.active_leaks || []).join('|'),
+                              r.anomalyScore ?? '',
+                              r.alarm ? 'yes' : 'no',
+                            ].join(','),
+                          )
+                          .join('\n')
+                        const blob = new Blob([head + rows], { type: 'text/csv' })
+                        const url = URL.createObjectURL(blob)
+                        const a = document.createElement('a')
+                        a.href = url
+                        a.download = `battledim2018-${realResp?.start?.slice(0, 10) || 'window'}.csv`
+                        document.body.appendChild(a)
+                        a.click()
+                        a.remove()
+                        URL.revokeObjectURL(url)
+                      }}
+                      className="rounded border border-slate-700 bg-slate-900/80 px-2 py-1 text-[10px] font-mono text-slate-300 hover:border-cyan-600/50 hover:text-cyan-300"
+                      title="Download the visible window as CSV"
+                    >
+                      Export CSV
+                    </button>
+                    <Input
+                      placeholder="Filter by time, flow…"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      className="max-w-[180px] text-xs font-mono"
+                    />
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <Table>
@@ -2614,6 +2712,7 @@ ${simRows ? `<h2>6. Observed vs simulated flow</h2><table><tr><th>Time</th><th>O
           setScenario={handleScenarioChange}
           mode={dataSourceMode}
           setMode={setDataSourceMode}
+          notify={(message, type = 'info') => setToast({ message, type })}
         />
       )
     if (page === 'validation') return <ValidationPage />

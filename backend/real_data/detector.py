@@ -479,6 +479,45 @@ def analyze_real(points: List[Dict[str, Any]]) -> dict:
         for i in range(len(points))
     ][:500]
 
+    # --- evidence-strength verification (R5) ------------------------------
+    # Transparent 0-100 score over the frozen rule's four factors, so the
+    # Investigation-style "how strong is this evidence" question has a
+    # real-data answer. No learning, no labels — pure rule arithmetic.
+    z_meter_max_latest = float(latest["z_meter_max"])
+    flow_factor = float(np.clip(max(z_flow, z_meter_max_latest / 1.2) / 4.0, 0.0, 1.0))
+    cluster_factor = float(np.clip(int(latest["press_vote"]) / PRESS_VOTE_MIN, 0.0, 1.0))
+    strong_factor = float(np.clip(-min_z / Z_PRESS_STRONG, 0.0, 1.0))
+    run = 0
+    for i in range(len(scored) - 1, -1, -1):
+        if bool(scored["alarm"].iloc[i]):
+            run += 1
+        else:
+            break
+    persistence_factor = float(np.clip(run / PERSISTENCE_STEPS, 0.0, 1.0))
+    strength = round(
+        100 * (0.35 * flow_factor + 0.25 * cluster_factor + 0.2 * strong_factor + 0.2 * persistence_factor)
+    )
+    if not any_alarm:
+        verdict = "No alarm evidence in this window"
+    elif strength >= 70:
+        verdict = "Confirmed — all rule factors corroborate"
+    elif strength >= 40:
+        verdict = "Corroborated — partial rule agreement"
+    else:
+        verdict = "Weak — single-factor signal only"
+    verification = {
+        "strength": strength,
+        "verdict": verdict,
+        "factors": {
+            "flow_elevation": round(flow_factor, 2),
+            "pressure_cluster_vote": round(cluster_factor, 2),
+            "strongest_pressure_drop": round(strong_factor, 2),
+            "persistence": round(persistence_factor, 2),
+        },
+        "alarm_run_steps": run,
+        "method": "0.35*flow + 0.25*cluster + 0.20*strong-drop + 0.20*persistence over frozen thresholds",
+    }
+
     return {
         "latest": {**points[latest_idx], "anomalyScore": float(latest["anomaly_score"]),
                     "alarm": alarm_now, "reacted_sensor": reacted},
@@ -491,6 +530,7 @@ def analyze_real(points: List[Dict[str, Any]]) -> dict:
         "alarm_timestamps": alarm_ts[:200],
         "alarm_count": int(scored["sustained_alarm"].sum()),
         "window_steps": window_steps,
+        "verification": verification,
         "primaryHypothesis": primary,
         "severity": severity,
         "confidence": round(float(max(peak_score, float(latest["anomaly_score"])) * 100), 1),

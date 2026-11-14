@@ -196,3 +196,21 @@ export async function postRealDataImpact(points) {
   return j
 }
 
+// R4 — one-shot Live Replay payload (accelerated-time episode player).
+// Cold start builds the merged SCADA frame once (~105k rows), so allow a long timeout.
+export async function fetchRealDataReplay(eventPipe, force = false) {
+  const q = `?event_pipe=${encodeURIComponent(eventPipe)}${force ? '&force=true' : ''}`
+  const j = await fetchJson(`/api/real-data/replay${q}`, {}, 180000)
+  return j
+}
+
+// R5 — create an incident from a real-SCADA alarm (Supabase-backed).
+export async function createIncident(item) {
+  const j = await fetchJson(
+    '/api/incidents',
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(item) },
+    10000,
+  )
+  return j
+}
+

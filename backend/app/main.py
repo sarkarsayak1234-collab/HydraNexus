@@ -405,6 +405,26 @@ def real_data_detect(points: list = Body(..., description="RealTelemetryPoint-st
         raise HTTPException(status_code=500, detail=f"Real detection failed: {str(e)}")
 
 
+@app.get("/api/real-data/replay")
+def real_data_replay(
+    event_pipe: str = Query(..., description="Leak pipe id to replay (e.g. p673)"),
+    force: bool = Query(default=False, description="Rebuild the cached replay for this pipe"),
+):
+    """One-shot Live Replay payload for the accelerated-time player (R4).
+
+    Native 5-min window around the episode, scored with the SAME causal
+    14-day baseline the benchmark uses — so the alarm fires in the replay
+    exactly when the benchmark says it did. Ground truth only timestamps the
+    story; the detector itself sees SCADA signals only."""
+    try:
+        from real_data.replay import build_replay
+        return build_replay(event_pipe, force=force)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Replay build failed: {str(e)}")
+
+
 @app.post("/api/real-data/investigate")
 def real_data_investigate(points: list = Body(..., description="RealTelemetryPoint-style window")):
     """Root-cause investigation over a real-SCADA window: per-sensor pressure-z
