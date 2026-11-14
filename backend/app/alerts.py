@@ -173,7 +173,7 @@ def _save_alert(alert: Dict[str, Any]) -> None:
         _MEMORY_ALERTS[alert["id"]] = alert
 
 
-def dispatch_alert(alert_id: str, worker_id: str) -> Dict[str, Any]:
+def dispatch_alert(alert_id: str, worker_id: str, ack_base: str = "") -> Dict[str, Any]:
     """Pick a worker -> build the SMS -> send it (mock in Phase 1) -> mark DISPATCHED."""
     alert = _get_alert(alert_id)
     if alert is None:
@@ -192,7 +192,7 @@ def dispatch_alert(alert_id: str, worker_id: str) -> Dict[str, Any]:
         f"🚨 HydraNexus ALERT [{alert.get('severity')}]\n"
         f"{alert.get('type')} at {base} ({alert.get('zone')})\n"
         f"Est. loss: {float(alert.get('loss_per_hour') or 0):,.0f} L/hr\n"
-        f"Tap to resolve: https://hydranexus-api.onrender.com/api/alerts/{alert_id}/ack?t={token}"
+        f"Tap to resolve: {ack_base.rstrip('/')}/api/alerts/{alert_id}/ack?t={token}"
     )
 
     from .sms import send_sms

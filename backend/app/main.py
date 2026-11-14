@@ -6,7 +6,7 @@ Principle: software-first (simulated telemetry), human-in-the-loop (no autonomou
 from __future__ import annotations
 from typing import Optional
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Query, HTTPException, Body
+from fastapi import FastAPI, Query, HTTPException, Body, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from .schemas import DetectRequest, VerifyRequest, WhatIfRequest, DecisionCompareRequest
@@ -114,10 +114,13 @@ def alert_create(item: dict = Body(default={})):
 
 
 @app.post("/api/alerts/{alert_id}/dispatch")
-def alert_dispatch(alert_id: str, body: dict = Body(...)):
+def alert_dispatch(alert_id: str, body: dict = Body(...), request: Request = None):
     try:
         from app import alerts as al
-        return al.dispatch_alert(alert_id, str(body.get("worker_id") or ""))
+        # ack link uses THIS server's public address: Render in production,
+        # localhost when testing locally (phone taps must hit the same store)
+        ack_base = str(request.base_url).rstrip("/") if request else "https://hydranexus-api.onrender.com"
+        return al.dispatch_alert(alert_id, str(body.get("worker_id") or ""), ack_base=ack_base)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
