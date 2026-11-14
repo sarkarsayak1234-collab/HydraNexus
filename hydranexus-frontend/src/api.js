@@ -247,3 +247,15 @@ export async function fetchHydraulicWhatif({ leak_pipe, leak_lph = 8000, action 
   return j
 }
 
+// Option A — hybrid model-based localization: SCADA pressure residuals matched
+// against simulated leak fingerprints from the digital twin. Cold run = one
+// week-long baseline sim + one fingerprint sim per candidate (~30-120 s).
+export async function fetchHydraulicLocalize({ event_pipe, start, end, std_leak_lph = 15000, n_candidates = 12, points = 48 } = {}) {
+  const params = new URLSearchParams({ std_leak_lph: String(std_leak_lph), n_candidates: String(n_candidates), points: String(points) })
+  if (event_pipe) params.append('event_pipe', event_pipe)
+  if (start) params.append('start', start)
+  if (end) params.append('end', end)
+  const j = await fetchJson(`/api/hydraulic/localize?${params.toString()}`, {}, 300000)
+  return j
+}
+

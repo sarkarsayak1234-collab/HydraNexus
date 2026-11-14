@@ -449,6 +449,31 @@ def hydraulic_whatif(
         raise HTTPException(status_code=500, detail=f"Hydraulic what-if failed: {str(e)}")
 
 
+@app.get("/api/hydraulic/localize")
+def hydraulic_localize(
+    event_pipe: Optional[str] = Query(default=None, description="Pipe id to focus the localization window on"),
+    start: Optional[str] = Query(default=None, description="Explicit window start"),
+    end: Optional[str] = Query(default=None, description="Explicit window end"),
+    std_leak_lph: float = Query(default=15000.0, gt=0, description="Standard test-leak size for fingerprints (L/hr)"),
+    n_candidates: int = Query(default=12, ge=4, le=30, description="Max candidate pipes to fingerprint"),
+    points: int = Query(default=48, ge=12, le=145, description="Window sampling points"),
+):
+    """Option A hybrid localization: SCADA pressure residuals vs simulated leak
+    fingerprints from the digital twin. Week-long calibration, gravity sensor
+    signature, Spearman rank matching. The answer key only scores the result.
+    ~30-120 s cold (one week-long baseline sim + one fingerprint sim per candidate)."""
+    try:
+        from real_data.hydraulic import localize_hybrid
+        return localize_hybrid(
+            event_pipe=event_pipe, start=start, end=end,
+            std_leak_lph=std_leak_lph, n_candidates=n_candidates, points=points,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Hydraulic localization failed: {str(e)}")
+
+
 @app.get("/api/real-data/replay")
 def real_data_replay(
     event_pipe: str = Query(..., description="Leak pipe id to replay (e.g. p673)"),

@@ -11,7 +11,7 @@ import { Wrench, Gauge, Eye, Users, MapPin, CheckCircle2, AlertTriangle, Scale, 
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from './ui/card'
 import { Badge } from './ui/badge'
 import LTownMap from './LTownMap'
-import { fetchRealDataMetadata, fetchRealDataRespond, fetchHydraulicWhatif } from '../api'
+import { fetchRealDataMetadata, fetchRealDataRespond, fetchHydraulicWhatif, fetchHydraulicLocalize } from '../api'
 
 let metaCache = null
 
@@ -135,6 +135,25 @@ export default function RealWhatIfPage({ onPlanDone }) {
       setTwinPhase('error')
     } finally {
       setTwinStep('')
+    }
+  }
+
+  // Option A — model-based localization via residual fingerprint matching
+  const [loc, setLoc] = useState(null)
+  const [locPhase, setLocPhase] = useState('idle') // idle | running | done | error
+  const [locError, setLocError] = useState(null)
+
+  const runLocalize = async () => {
+    setLocPhase('running')
+    setLocError(null)
+    setLoc(null)
+    try {
+      const r = await fetchHydraulicLocalize({ event_pipe: pipe || undefined, points })
+      setLoc(r)
+      setLocPhase('done')
+    } catch (e) {
+      setLocError(e?.message || 'Localization failed')
+      setLocPhase('error')
     }
   }
 
@@ -314,6 +333,83 @@ export default function RealWhatIfPage({ onPlanDone }) {
               </button>
             </CardHeader>
             <CardContent>
+              {/* Model-based localization block */}
+              <div className="mb-4 rounded-xl border border-slate-800 bg-slate-900/40 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-bold text-slate-200">Where is it? — model-based localization</p>
+                    <p className="mt-0.5 max-w-2xl text-[11px] leading-relaxed text-slate-500">
+                      The twin simulates the healthy week, each sensor is calibrated against it, and the SCADA
+                      pressure residuals (measured − expected) are matched against simulated leak fingerprints on
+                      candidate pipes. Candidates come from the SCADA residuals alone; the answer key only scores
+                      the result afterwards. Cold run ≈ 1–2 min (week-long baseline + one fingerprint sim per
+                      candidate).
+                    </p>
+                  </div>
+                  <button
+                    onClick={runLocalize}
+                    disabled={locPhase === 'running'}
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-cyan-600/50 bg-cyan-950/40 px-3 py-1.5 text-xs font-semibold text-cyan-300 hover:bg-cyan-900/40 disabled:opacity-50"
+                  >
+                    <MapPin className="h-3.5 w-3.5" />
+                    {locPhase === 'running' ? 'Matching fingerprints…' : 'Locate with the twin'}
+                  </button>
+                </div>
+                {locPhase === 'running' && (
+                  <p className="mt-2 flex items-center gap-2 text-xs text-cyan-300">
+                    <span className="h-3 w-3 animate-spin rounded-full border-2 border-cyan-400 border-t-transparent" /> Simulating the healthy week + fingerprints…
+                  </p>
+                )}
+                {locPhase === 'error' && (
+                  <p className="mt-2 text-xs text-amber-300">{locError}</p>
+                )}
+                {loc && (
+                  <div className="mt-2.5 space-y-2">
+                    <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                      <span className="rounded border border-cyan-500/40 bg-cyan-950/50 px-2 py-0.5 font-mono text-cyan-300">
+                        twin best match: pipe {loc.twin_localized?.pipe} ({loc.twin_localized?.match_pct}%)
+                      </span>
+                      {loc.scada_localized && (
+                        <span className="rounded border border-slate-700 bg-slate-900/70 px-2 py-0.5 font-mono text-slate-300">
+                          SCADA estimate: pipe {loc.scada_localized.pipe}
+                        </span>
+                      )}
+                      {loc.answer_key_overlay?.true_pipe && (
+                        <span className="rounded border border-amber-500/40 bg-amber-950/40 px-2 py-0.5 font-mono text-amber-300">
+                          answer key: pipe {loc.answer_key_overlay.true_pipe}
+                        </span>
+                      )}
+                    </div>
+                    <table className="w-full text-left text-[11px]">
+                      <thead>
+                        <tr className="border-b border-slate-800 text-[9px] font-mono uppercase tracking-wider text-slate-500">
+                          <th className="py-1.5 pr-3">#</th>
+                          <th className="py-1.5 pr-3">Candidate pipe</th>
+                          <th className="py-1.5 pr-3">Dist. to sag centroid</th>
+                          <th className="py-1.5">Match</th>
+                        </tr>
+                      </thead>
+                      <tbody className="font-mono">
+                        {(loc.candidates || []).slice(0, 6).map((c) => (
+                          <tr key={c.pipe} className="border-b border-slate-900/70">
+                            <td className="py-1.5 pr-3 text-slate-500">{c.rank}</td>
+                            <td className="py-1.5 pr-3 font-semibold text-slate-200">{c.pipe}</td>
+                            <td className="py-1.5 pr-3 text-slate-400">{c.dist_model_m != null ? `${c.dist_model_m} m` : '—'}</td>
+                            <td className="py-1.5 text-cyan-300">{c.match_pct}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <p className="text-[10px] leading-relaxed text-slate-500">
+                      {loc.candidates?.length > 1 &&
+                        Math.abs((loc.candidates[0]?.match_pct || 0) - (loc.candidates[1]?.match_pct || 0)) < 3
+                        ? 'Top candidates tie within noise — 33 sensors resolve the leak to this NEIGHBORHOOD; individual pipes inside it are hydraulically indistinguishable at this sensor density. Crews sweep the area, starting at the top match.'
+                        : 'Correlation scores are conservative: the twin is a typical-week model, not a replay of 2018.'}
+                    </p>
+                  </div>
+                )}
+              </div>
+
               {!targetPipe && <p className="text-xs text-slate-500">No target pipe in this window — run the planner on a leak window first.</p>}
               {twinPhase === 'running' && (
                 <p className="flex items-center gap-2 text-xs text-cyan-300">

@@ -84,6 +84,7 @@ Detection never reads `2018_Leakages.csv`; evaluation and UI overlays do, and ar
 | `GET /api/real-data/respond` | Response planner: isolate / throttle / monitor / dispatch with SCADA-derived savings and stated assumptions (decision support — not a simulation) |
 | `GET /api/hydraulic/state` | Hydraulic digital twin: flow in EVERY pipe + pressure at every node of the official BattLeDIM EPANET model (WNTR/EPANET) |
 | `GET /api/hydraulic/whatif` | True hydraulic What-If: leak injected ON the pipe (EPANET split + midpoint emitter sized from SCADA), isolate/throttle actually simulated, three-simulation comparison |
+| `GET /api/hydraulic/localize` | Hybrid localization: SCADA pressure residuals (week-calibrated, gravity signature) matched against simulated leak fingerprints on candidate pipes |
 | `GET /api/real-data/model/info` | Detector model card: training data, frozen thresholds, provenance disclosure |
 | `GET /api/real-data/metadata` · `/leakages` | Dataset metadata and labelled ground-truth episodes |
 

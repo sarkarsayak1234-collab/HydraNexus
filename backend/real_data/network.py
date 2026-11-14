@@ -158,3 +158,23 @@ def localize_nearest_pipe(sensor_ids: List[str]) -> Optional[dict]:
     if best_id is None:
         return None
     return {"pipe": best_id, "dist_model_m": round(best_d, 1)}
+
+
+def nearest_pipes_to_centroid(sensor_ids: List[str], k: int = 12) -> List[dict]:
+    """The k pipes closest to the sag-cluster centroid (SCADA-derived candidate
+    shortlist for the twin's residual-matching search — no answer key used)."""
+    lt = _load()
+    c = centroid(sensor_ids)
+    if not c:
+        return []
+    scored = []
+    for p in lt["pipes"]:
+        a = lt["coords"].get(p["a"])
+        b = lt["coords"].get(p["b"])
+        if not a or not b:
+            continue
+        mx, my = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2
+        d = math.hypot(mx - c["x"], my - c["y"])
+        scored.append({"pipe": p["id"], "dist_model_m": round(d, 1)})
+    scored.sort(key=lambda x: x["dist_model_m"])
+    return scored[:k]
