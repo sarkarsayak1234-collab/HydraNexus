@@ -42,25 +42,44 @@ function pipeWeight(dia) {
   return 1.0
 }
 
-function FitBounds({ focus }) {
+function FitBounds({ focus, fitTargets }) {
   const map = useMap()
   const mountedRef = useRef(false)
   const prevFocusRef = useRef(null)
+  const prevTargetsRef = useRef('')
   useEffect(() => {
-    // First mount: ALWAYS show the whole network. The initial view must never
-    // be a zoomed-in corner just because a focus target already exists.
-    if (!mountedRef.current) {
-      mountedRef.current = true
-      prevFocusRef.current = focus
-      const xs = Object.values(coords).map((c) => c[0])
-      const ys = Object.values(coords).map((c) => c[1])
+    const fitToNodes = (ids, padding) => {
+      const pts = ids.map((id) => coords[id]).filter(Boolean)
+      if (!pts.length) return false
+      const xs = pts.map((c) => c[0])
+      const ys = pts.map((c) => c[1])
       map.fitBounds(
         [
           [Math.min(...ys), Math.min(...xs)],
           [Math.max(...ys), Math.max(...xs)],
         ],
-        { padding: [14, 14] },
+        { padding },
       )
+      return true
+    }
+    // First mount: zoom to the highlighted sensors when the parent highlights
+    // a cluster (sag sensors / reacting sensors) — a full-network view makes
+    // three amber dots invisible. Otherwise show the whole network.
+    if (!mountedRef.current) {
+      mountedRef.current = true
+      prevFocusRef.current = focus
+      prevTargetsRef.current = (fitTargets || []).join(',')
+      if (!(fitTargets || []).length || !fitToNodes(fitTargets, [70, 70])) {
+        const xs = Object.values(coords).map((c) => c[0])
+        const ys = Object.values(coords).map((c) => c[1])
+        map.fitBounds(
+          [
+            [Math.min(...ys), Math.min(...xs)],
+            [Math.max(...ys), Math.max(...xs)],
+          ],
+          { padding: [14, 14] },
+        )
+      }
       return
     }
     // Later focus changes (e.g. user selects another episode) fly the camera.
@@ -69,7 +88,7 @@ function FitBounds({ focus }) {
       const c = coords[focus]
       if (c) map.flyTo([c[1], c[0]], Math.max(map.getZoom(), 2), { duration: 0.8 })
     }
-  }, [map, focus])
+  }, [map, focus, fitTargets])
   return null
 }
 
@@ -90,10 +109,12 @@ export default function LTownMap({
   showAllSensors = true,
   sensors = [],
   pipeFlows = null,
+  fitMode = 'auto', // 'auto' = zoom to highlighted sensors on mount, 'network' = whole network
   className = '',
 }) {
   const activeLeakSet = useMemo(() => new Set(activeLeaks), [activeLeaks])
   const sensorSet = useMemo(() => new Set(sensors), [sensors])
+  const fitTargets = fitMode === 'auto' && sensors.length ? sensors : null
   // Hydraulic digital-twin overlay: color pipes by simulated |flow| (CMH).
   const maxFlow = useMemo(() => {
     if (!pipeFlows) return 0
@@ -146,7 +167,7 @@ export default function LTownMap({
       boundsOptions={{ padding: [14, 14] }}
       scrollWheelZoom
     >
-      <FitBounds focus={focus} />
+      <FitBounds focus={focus} fitTargets={fitTargets} />
 
       {/* Network skeleton — 905 real pipes */}
       {pipes.map((p) => {

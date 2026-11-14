@@ -496,6 +496,7 @@ export default function RealWhatIfPage({ onPlanDone }) {
                         pipeFlows={twin.isolate.pipes_after_action}
                         activeLeaks={[targetPipe]}
                         sensors={sag}
+                        fitMode="network"
                       />
                     </div>
                     <p className="mt-1.5 text-[10px] font-mono text-slate-500">

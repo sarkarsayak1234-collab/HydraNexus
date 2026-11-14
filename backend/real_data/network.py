@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 _DATA = Path(__file__).resolve().parent.parent / "data" / "real" / "ltown_network.json"
+_INP_EPANET = Path(__file__).resolve().parent.parent / "data" / "real" / "L-TOWN_v2_Model.inp"
 
 ANCHORS: Dict[str, str] = {
     "p227": "n303",   # gravity inlet branch 1 (meter p227)
@@ -52,12 +53,25 @@ def _load() -> dict:
 
 @lru_cache(maxsize=1)
 def _branch_map() -> Dict[str, str]:
-    """node id -> anchor key ('p227'|'p235'|'PUMP_1') of the nearest supply anchor."""
-    lt = _load()
+    """node id -> anchor key ('p227'|'p235'|'PUMP_1') of the nearest supply anchor.
+
+    Connectivity comes from the EPANET model when available: the frontend JSON
+    pipe table omits the three PRV valves that connect the supply zones, which
+    left one zone as an isolated island and misattributed 29 of 33 sensors.
+    Falls back to the JSON graph if wntr is unavailable."""
     adjacency: Dict[str, List[str]] = {}
-    for pid, (a, b) in lt["pipe_map"].items():
-        adjacency.setdefault(a, []).append(b)
-        adjacency.setdefault(b, []).append(a)
+    try:
+        import wntr
+        wn = wntr.network.WaterNetworkModel(str(_INP_EPANET))
+        for lname in wn.link_name_list:
+            link = wn.get_link(lname)
+            adjacency.setdefault(link.start_node_name, []).append(link.end_node_name)
+            adjacency.setdefault(link.end_node_name, []).append(link.start_node_name)
+    except Exception:
+        lt = _load()
+        for pid, (a, b) in lt["pipe_map"].items():
+            adjacency.setdefault(a, []).append(b)
+            adjacency.setdefault(b, []).append(a)
 
     dist: Dict[str, Dict[str, int]] = {}
     for anchor_key, start in ANCHORS.items():
@@ -72,7 +86,7 @@ def _branch_map() -> Dict[str, str]:
         dist[anchor_key] = d
 
     branch: Dict[str, str] = {}
-    for node in lt["coords"]:
+    for node in _load()["coords"]:
         best_key, best_d = None, None
         for key, d in dist.items():
             v = d.get(node)
