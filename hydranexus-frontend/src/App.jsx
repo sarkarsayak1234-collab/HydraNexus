@@ -80,6 +80,7 @@ function VerifyChart({ observed, simulated }) {
 }
 
 const pageMeta = {
+  alerts: ['Field Alerts', 'Live incident alerts · dispatch nearby field crew · SMS acknowledgment.'],
   overview: ['Overview', 'Network health and active incidents.'],
   network: ['Network', 'Topology, zones and the suspected fault location.'],
   monitoring: ['Telemetry', 'Flow, pressure, consumption and tank level. Simulated feed.'],
@@ -2707,6 +2708,7 @@ ${simRows ? `<h2>6. Observed vs simulated flow</h2><table><tr><th>Time</th><th>O
   }
 
   const realMetaByPage = {
+    alerts: ['Field Alerts', 'Live incident alerts · dispatch nearby field crew · SMS acknowledgment closes the alert automatically'],
     incident: ['Investigation — Real SCADA', 'Root-cause analysis over BattLeDIM 2018 SCADA signals · sensor ranking, inflow decomposition, branch attribution'],
     impact: ['Impact — Real SCADA', 'Estimated water loss and affected supply branch from BattLeDIM 2018 telemetry · answer key shown as labelled overlay only'],
     whatif: ['Response Planner — Real SCADA', 'Honest intervention options (isolate / throttle / monitor / dispatch) with SCADA-derived savings and stated assumptions · no simulated outcomes'],
@@ -2717,7 +2719,7 @@ ${simRows ? `<h2>6. Observed vs simulated flow</h2><table><tr><th>Time</th><th>O
       ? realMetaByPage[page]
       : page === 'monitoring' && dataSourceMode === 'real'
         ? ['Real SCADA Dataset', 'BattLeDIM 2018 benchmark · 2,176 km network · 442 sensors · Ground-truth leak events']
-        : pageMeta[page]
+        : (pageMeta[page] || ['Dashboard', ''])
 
   const render = () => {
     if (page === 'overview')
