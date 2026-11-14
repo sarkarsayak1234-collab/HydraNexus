@@ -96,9 +96,21 @@ function AlertCard({ alert, workers, onDispatch, onResolve, busyId }) {
 
       {alert.status === 'DISPATCHED' && alert.sms_preview && (
         <div className="mt-2.5 rounded-lg border border-slate-700 bg-[#0c1626] p-2.5">
-          <p className="text-[9px] font-mono uppercase tracking-wider text-slate-500">
-            SMS sent to {alert.worker_phone} ({alert.sms_mode || 'mock'}) — waiting for the field tap…
-          </p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[9px] font-mono uppercase tracking-wider text-slate-500">
+              SMS sent to {alert.worker_phone} ({alert.sms_mode || 'mock'}) — waiting for the field tap…
+            </p>
+            <button
+              onClick={() => {
+                navigator.clipboard?.writeText(alert.sms_preview || '')
+                notify?.('Message + acknowledgment link copied — paste it into your phone browser to test the tap.', 'success')
+              }}
+              className="shrink-0 rounded border border-slate-700 bg-slate-900/80 px-1.5 py-0.5 text-[9px] font-mono text-cyan-300 hover:border-cyan-600/50"
+              title="Copy the message + acknowledgment link"
+            >
+              copy link
+            </button>
+          </div>
           <pre className="mt-1 whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-slate-300">{alert.sms_preview}</pre>
         </div>
       )}
