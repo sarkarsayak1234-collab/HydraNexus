@@ -1,0 +1,7 @@
+
+# EPANET/WNTR scratch files
+temp.inp
+temp.bin
+temp.rpt
+*.rpt
+!backend/data/real/*.inp

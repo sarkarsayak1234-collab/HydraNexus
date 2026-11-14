@@ -405,6 +405,50 @@ def real_data_detect(points: list = Body(..., description="RealTelemetryPoint-st
         raise HTTPException(status_code=500, detail=f"Real detection failed: {str(e)}")
 
 
+@app.get("/api/hydraulic/state")
+def hydraulic_state(
+    when: Optional[str] = Query(default=None, description="Calendar timestamp to phase-align the weekly demand patterns"),
+    hours: int = Query(default=24, ge=6, le=72, description="Simulation duration"),
+):
+    """Hydraulic digital-twin baseline: flow in EVERY pipe + pressure at every
+    node of the official BattLeDIM EPANET model (L-TOWN_v2_Model.inp, simulated
+    with WNTR/EPANET). Model-estimated typical week phase-aligned to `when`."""
+    try:
+        from real_data.hydraulic import simulate_state
+        return simulate_state(hours=hours, when=when)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Hydraulic state failed: {str(e)}")
+
+
+@app.get("/api/hydraulic/whatif")
+def hydraulic_whatif(
+    leak_pipe: str = Query(..., description="Pipe id to inject the leak on (split at midpoint)"),
+    leak_lph: float = Query(default=8000, gt=0, le=200000, description="Leak size in L/hr (from the SCADA excess-inflow estimate)"),
+    action: str = Query(default="isolate", description="isolate | throttle | none"),
+    throttle_target: float = Query(default=0.30, gt=0, le=0.9, description="Target flow reduction for the throttled pipe"),
+    when: Optional[str] = Query(default=None, description="Calendar timestamp to phase-align the weekly demand patterns"),
+    hours: int = Query(default=24, ge=6, le=72, description="Simulation duration"),
+):
+    """True hydraulic What-If on the digital twin: leak injected ON the pipe
+    (EPANET pipe split + midpoint emitter), then the intervention (isolate /
+    throttle) is simulated. Returns the three-simulation comparison — computed
+    physics, not estimated ranges."""
+    try:
+        from real_data.hydraulic import simulate_whatif
+        return simulate_whatif(
+            leak_pipe=leak_pipe,
+            leak_lph=leak_lph,
+            action=action,
+            throttle_target=throttle_target,
+            hours=hours,
+            when=when,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Hydraulic what-if failed: {str(e)}")
+
+
 @app.get("/api/real-data/replay")
 def real_data_replay(
     event_pipe: str = Query(..., description="Leak pipe id to replay (e.g. p673)"),

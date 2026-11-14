@@ -7,11 +7,11 @@
  * the true simulation; a banner here says exactly that.
  */
 import { useEffect, useMemo, useState } from 'react'
-import { Wrench, Gauge, Eye, Users, MapPin, CheckCircle2, AlertTriangle, Scale } from 'lucide-react'
+import { Wrench, Gauge, Eye, Users, MapPin, CheckCircle2, AlertTriangle, Scale, Cpu } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from './ui/card'
 import { Badge } from './ui/badge'
 import LTownMap from './LTownMap'
-import { fetchRealDataMetadata, fetchRealDataRespond } from '../api'
+import { fetchRealDataMetadata, fetchRealDataRespond, fetchHydraulicWhatif } from '../api'
 
 let metaCache = null
 
@@ -108,8 +108,35 @@ export default function RealWhatIfPage({ onPlanDone }) {
   }, [pipe, points])
 
   const sit = plan?.situation || {}
-  const sag = useMemo(() => sit.sag_sensors || [], [sit])
+  const sag = useMemo(() => sit.recent_loss_lph ? sit.sag_sensors : [], [sit])
   const targetPipe = sit.target_pipe?.pipe || null
+
+  // Digital-twin simulation state (Option B)
+  const [twin, setTwin] = useState(null) // { isolate: {...}, throttle: {...} }
+  const [twinPhase, setTwinPhase] = useState('idle') // idle | running | done | error
+  const [twinStep, setTwinStep] = useState('')
+  const [twinError, setTwinError] = useState(null)
+
+  const runTwin = async () => {
+    if (!targetPipe || !sit.recent_loss_lph) return
+    setTwinPhase('running')
+    setTwinError(null)
+    setTwin(null)
+    const when = plan?.window?.end
+    try {
+      setTwinStep('Injecting the leak on pipe ' + targetPipe + ' and simulating isolation…')
+      const iso = await fetchHydraulicWhatif({ leak_pipe: targetPipe, leak_lph: Math.max(500, sit.recent_loss_lph), action: 'isolate', when })
+      setTwinStep('Simulating pressure throttling…')
+      const thr = await fetchHydraulicWhatif({ leak_pipe: targetPipe, leak_lph: Math.max(500, sit.recent_loss_lph), action: 'throttle', throttle_target: 0.3, when })
+      setTwin({ isolate: iso, throttle: thr })
+      setTwinPhase('done')
+    } catch (e) {
+      setTwinError(e?.message || 'Hydraulic simulation failed')
+      setTwinPhase('error')
+    } finally {
+      setTwinStep('')
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -262,6 +289,130 @@ export default function RealWhatIfPage({ onPlanDone }) {
               )
             })}
           </div>
+
+          {/* Digital-twin simulation (Option B) */}
+          <Card className="border-cyan-800/50 bg-[#0a1424]/90 backdrop-blur-sm">
+            <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-sm font-medium text-slate-200">
+                  <Cpu className="h-4 w-4 text-cyan-400" /> Digital-twin check — real hydraulic simulation
+                </CardTitle>
+                <CardDescription className="max-w-3xl text-[11px]">
+                  The official BattLeDIM EPANET model of this exact network (905 pipes, 785 nodes, pump &amp; tank
+                  controls) is simulated with WNTR: the leak is injected <span className="text-slate-300">on pipe {targetPipe || '—'}</span> at
+                  the SCADA-estimated size, then each intervention is actually run and the whole network recomputed.
+                  Results are computed physics — the estimates above become numbers here.
+                </CardDescription>
+              </div>
+              <button
+                onClick={runTwin}
+                disabled={twinPhase === 'running' || !targetPipe || !sit.recent_loss_lph}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-cyan-600 px-3 py-1.5 text-xs font-semibold text-white shadow hover:bg-cyan-500 disabled:opacity-50"
+              >
+                <Cpu className="h-3.5 w-3.5" />
+                {twinPhase === 'running' ? 'Simulating…' : twinPhase === 'done' ? 'Re-run simulation' : 'Run hydraulic simulation'}
+              </button>
+            </CardHeader>
+            <CardContent>
+              {!targetPipe && <p className="text-xs text-slate-500">No target pipe in this window — run the planner on a leak window first.</p>}
+              {twinPhase === 'running' && (
+                <p className="flex items-center gap-2 text-xs text-cyan-300">
+                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-cyan-400 border-t-transparent" /> {twinStep} (each run recomputes all 905 pipes)
+                </p>
+              )}
+              {twinPhase === 'error' && (
+                <div className="flex items-center gap-2 rounded-lg border border-amber-700/40 bg-amber-950/20 p-3 text-xs text-amber-200">
+                  <AlertTriangle className="h-4 w-4" /> {twinError} — the model simulation may be cold; try again.
+                </div>
+              )}
+              {twin && (
+                <div className="mt-1 space-y-3">
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    {/* Isolate result */}
+                    <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3">
+                      <p className="flex items-center gap-1.5 text-xs font-bold text-slate-200">
+                        <Wrench className="h-3.5 w-3.5 text-cyan-400" /> Isolate pipe {twin.isolate.leak_pipe} — simulated
+                        {twin.isolate.leak.leak_stopped ? (
+                          <Badge className="border-emerald-600/60 bg-emerald-950/60 text-emerald-300 hover:bg-emerald-950/60">leak fully stopped</Badge>
+                        ) : (
+                          <Badge className="border-amber-600/60 bg-amber-950/60 text-amber-300 hover:bg-amber-950/60">leak reduced</Badge>
+                        )}
+                      </p>
+                      <div className="mt-2 grid grid-cols-3 gap-2 font-mono text-[11px]">
+                        <div className="rounded border border-slate-800 bg-slate-950/60 p-2">
+                          <p className="text-[9px] uppercase text-slate-500">leak flow</p>
+                          <p className="text-slate-200">{twin.isolate.leak.delivered_lph_no_action} → <span className="text-emerald-400">{twin.isolate.leak.delivered_lph_with_action}</span> L/h</p>
+                        </div>
+                        <div className="rounded border border-slate-800 bg-slate-950/60 p-2">
+                          <p className="text-[9px] uppercase text-slate-500">system inflow</p>
+                          <p className="text-slate-200">{Number(twin.isolate.system_inflow_lph.with_leak).toLocaleString()} → <span className="text-emerald-400">{Number(twin.isolate.system_inflow_lph.with_action).toLocaleString()}</span></p>
+                        </div>
+                        <div className="rounded border border-slate-800 bg-slate-950/60 p-2">
+                          <p className="text-[9px] uppercase text-slate-500">nodes losing service</p>
+                          <p className={twin.isolate.pressure_impact.nodes_losing_service_count > 0 ? 'text-amber-400' : 'text-emerald-400'}>
+                            {twin.isolate.pressure_impact.nodes_losing_service_count}
+                          </p>
+                        </div>
+                      </div>
+                      <p className="mt-2 text-[10px] leading-relaxed text-slate-500">
+                        Leak junction pressure: {twin.isolate.leak.junction_pressure_m.with_leak} m → {twin.isolate.leak.junction_pressure_m.with_action} m.
+                        {twin.isolate.pressure_impact.nodes_losing_service_count === 0
+                          ? ' No node drops below the 15 m service floor — looped network reroutes cleanly.'
+                          : ' Some nodes lose service — crews must plan tankering/alternative supply.'}
+                      </p>
+                    </div>
+
+                    {/* Throttle result */}
+                    <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3">
+                      <p className="flex items-center gap-1.5 text-xs font-bold text-slate-200">
+                        <Gauge className="h-3.5 w-3.5 text-cyan-400" /> Throttle pipe {twin.throttle.leak_pipe} −30% — simulated
+                        <Badge className="border-cyan-600/40 bg-cyan-950/40 text-cyan-300 hover:bg-cyan-950/40">physics, not a range</Badge>
+                      </p>
+                      <div className="mt-2 grid grid-cols-2 gap-2 font-mono text-[11px]">
+                        <div className="rounded border border-slate-800 bg-slate-950/60 p-2">
+                          <p className="text-[9px] uppercase text-slate-500">leak flow</p>
+                          <p className="text-slate-200">{twin.throttle.leak.delivered_lph_no_action} → <span className="text-cyan-300">{twin.throttle.leak.delivered_lph_with_action}</span> L/h</p>
+                        </div>
+                        <div className="rounded border border-slate-800 bg-slate-950/60 p-2">
+                          <p className="text-[9px] uppercase text-slate-500">reduction</p>
+                          <p className="text-cyan-300">
+                            {twin.throttle.leak.delivered_lph_no_action > 0
+                              ? `${Math.round((1 - twin.throttle.leak.delivered_lph_with_action / Math.max(twin.throttle.leak.delivered_lph_no_action, 0.001)) * 100)}%`
+                              : '—'}
+                          </p>
+                        </div>
+                      </div>
+                      <p className="mt-2 text-[10px] leading-relaxed text-slate-500">
+                        Throttle applied via minor loss k={twin.throttle.throttle?.minor_loss_k} on both pipe halves. In a
+                        looped network, water reroutes around a throttle — the real leak reduction may be smaller than the
+                        naive 11–42% rule of thumb. This number is the truth for THIS network.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Twin map */}
+                  <div>
+                    <p className="mb-1.5 text-[10px] font-mono uppercase tracking-wider text-slate-500">
+                      Network after the simulated isolation — every pipe colored by its simulated flow
+                    </p>
+                    <div className="h-[360px] w-full">
+                      <LTownMap
+                        pipeFlows={twin.isolate.pipes_after_action}
+                        activeLeaks={[targetPipe]}
+                        sensors={sag}
+                      />
+                    </div>
+                    <p className="mt-1.5 text-[10px] font-mono text-slate-500">
+                      <span className="text-cyan-400">bright cyan</span> = high simulated flow · dark = low flow ·{' '}
+                      <span className="text-amber-400">amber</span> = the isolated pipe (0 flow) · hover any pipe for its
+                      simulated flow · sensor chips = SCADA sag cluster
+                    </p>
+                  </div>
+                  <p className="font-mono text-[10px] text-slate-600">{twin.isolate.provenance?.note}</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Dispatch package + map */}
           <Card className="border-slate-800/80 bg-[#0c1626]/85 backdrop-blur-sm">

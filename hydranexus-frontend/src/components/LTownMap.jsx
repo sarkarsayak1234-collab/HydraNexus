@@ -89,10 +89,26 @@ export default function LTownMap({
   focus = null,
   showAllSensors = true,
   sensors = [],
+  pipeFlows = null,
   className = '',
 }) {
   const activeLeakSet = useMemo(() => new Set(activeLeaks), [activeLeaks])
   const sensorSet = useMemo(() => new Set(sensors), [sensors])
+  // Hydraulic digital-twin overlay: color pipes by simulated |flow| (CMH).
+  const maxFlow = useMemo(() => {
+    if (!pipeFlows) return 0
+    return Math.max(...Object.values(pipeFlows).map((p) => p.abs || 0), 1)
+  }, [pipeFlows])
+  const flowColor = (pid, dia) => {
+    if (!pipeFlows || !pipeFlows[pid]) return null
+    const t = Math.min(1, (pipeFlows[pid].abs || 0) / maxFlow)
+    // dark navy -> cyan as flow grows (t^0.5 for better low-flow visibility)
+    const s = Math.sqrt(t)
+    const r = Math.round(51 + (34 - 51) * s)
+    const g = Math.round(65 + (211 - 65) * s)
+    const b = Math.round(99 + (238 - 99) * s)
+    return `rgb(${r},${g},${b})`
+  }
   const episodeMap = useMemo(() => {
     const m = {}
     for (const e of episodes) if (e.reacted_sensor) m[e.pipe] = e
@@ -139,6 +155,7 @@ export default function LTownMap({
         if (!a || !b) return null
         const hl = highlightPipes.has(p.id)
         const isLeak = LEAK_PIPES.has(p.id)
+        const hydColor = flowColor(p.id, p.dia)
         return (
           <Polyline
             key={p.id}
@@ -148,8 +165,9 @@ export default function LTownMap({
               // #1e293b/#334155 skeleton was nearly invisible on dark mode.
               // Highlight (active leak / validation episode) is amber to match
               // the "ground-truth leak pipe" legend chips in the UI.
-              color: hl ? '#fbbf24' : isLeak ? '#b45309' : p.dia >= 400 ? '#64748b' : p.dia >= 250 ? '#475569' : '#3b4d63',
-              weight: hl ? 3.2 : pipeWeight(p.dia),
+              // pipeFlows overlay: simulated flow magnitude (digital twin).
+              color: hl ? '#fbbf24' : hydColor || (isLeak ? '#b45309' : p.dia >= 400 ? '#64748b' : p.dia >= 250 ? '#475569' : '#3b4d63'),
+              weight: hl ? 3.2 : hydColor ? Math.max(1.4, 1.4 + 2.2 * Math.sqrt(Math.min(1, (pipeFlows[p.id]?.abs || 0) / maxFlow))) : pipeWeight(p.dia),
               opacity: hl ? 1 : isLeak ? 0.85 : 0.9,
             }}
           >
@@ -157,6 +175,7 @@ export default function LTownMap({
               <span className="font-semibold text-slate-100">{p.id}</span>
               <span className="text-slate-400">
                 {' '}· {p.len.toFixed(0)} m · Ø{p.dia.toFixed(0)} mm
+                {pipeFlows?.[p.id] && <span className="text-cyan-300"> · simulated flow {pipeFlows[p.id].flow} m³/h</span>}
                 {isLeak && <span className="text-amber-400"> · ground-truth leak pipe</span>}
                 {activeLeakSet.has(p.id) && <span className="text-rose-400"> · ACTIVE LEAK</span>}
               </span>

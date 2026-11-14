@@ -229,3 +229,21 @@ export async function createIncident(item) {
   return j
 }
 
+// Option B — hydraulic digital twin (official BattLeDIM EPANET model via WNTR).
+// Cold start imports wntr + simulates; allow a long timeout.
+export async function fetchHydraulicState({ when, hours = 24 } = {}) {
+  const params = new URLSearchParams()
+  if (when) params.append('when', when)
+  params.append('hours', String(hours))
+  const j = await fetchJson(`/api/hydraulic/state?${params.toString()}`, {}, 180000)
+  return j
+}
+
+// True hydraulic What-If: leak injected ON the pipe, intervention simulated.
+export async function fetchHydraulicWhatif({ leak_pipe, leak_lph = 8000, action = 'isolate', throttle_target = 0.3, when, hours = 24 }) {
+  const params = new URLSearchParams({ leak_pipe, leak_lph: String(leak_lph), action, throttle_target: String(throttle_target), hours: String(hours) })
+  if (when) params.append('when', when)
+  const j = await fetchJson(`/api/hydraulic/whatif?${params.toString()}`, {}, 240000)
+  return j
+}
+

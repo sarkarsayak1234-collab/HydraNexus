@@ -82,6 +82,8 @@ Detection never reads `2018_Leakages.csv`; evaluation and UI overlays do, and ar
 | `POST /api/real-data/investigate` | Root-cause view: sensor-z ranking, meter decomposition, hour context, supply-branch attribution |
 | `POST /api/real-data/impact` | Impact estimate: excess-inflow loss rate/volume, affected branch, labelled answer-key overlay |
 | `GET /api/real-data/respond` | Response planner: isolate / throttle / monitor / dispatch with SCADA-derived savings and stated assumptions (decision support — not a simulation) |
+| `GET /api/hydraulic/state` | Hydraulic digital twin: flow in EVERY pipe + pressure at every node of the official BattLeDIM EPANET model (WNTR/EPANET) |
+| `GET /api/hydraulic/whatif` | True hydraulic What-If: leak injected ON the pipe (EPANET split + midpoint emitter sized from SCADA), isolate/throttle actually simulated, three-simulation comparison |
 | `GET /api/real-data/model/info` | Detector model card: training data, frozen thresholds, provenance disclosure |
 | `GET /api/real-data/metadata` · `/leakages` | Dataset metadata and labelled ground-truth episodes |
 
@@ -93,8 +95,9 @@ Detection never reads `2018_Leakages.csv`; evaluation and UI overlays do, and ar
 - `backend/` — FastAPI + Pandas/NumPy + Scikit-learn (IsolationForest) + NetworkX.
 - `backend/real_data/` — real-SCADA loader, mapper, **detector** (ground-truth-free), **evaluate** (honest
   benchmark), **investigate / impact / respond / replay** (real-mode decision layers), **network** (L-Town supply-branch
-  graph), processor, schema.
-- `backend/data/real/` — BattLeDIM 2018 SCADA + ground truth CSVs.
+  graph), **hydraulic** (digital twin: the official BattLeDIM EPANET model simulated with WNTR — flow in every pipe,
+  true isolate/throttle outcomes), processor, schema.
+- `backend/data/real/` — BattLeDIM 2018 SCADA + ground truth CSVs + `L-TOWN_v2_Model.inp` (official KIOS EPANET model).
 
 ## Live Deployment
 
